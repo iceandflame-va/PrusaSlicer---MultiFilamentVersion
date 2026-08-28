@@ -36,28 +36,37 @@ unsigned int PrintRegion::extruder(FlowRole role) const
 Flow PrintRegion::flow(const PrintObject &object, FlowRole role, double layer_height, bool first_layer) const
 {
     const PrintConfig          &print_config = object.print()->config();
+    const unsigned int          extruder_id  = this->extruder(role) - 1;
     ConfigOptionFloatOrPercent  config_width;
-    // Get extrusion width from configuration.
+    // Get extrusion width from configuration, honoring per-filament overrides.
     // (might be an absolute value, or a percent value, or zero for auto)
-    if (first_layer && print_config.first_layer_extrusion_width.value > 0) {
-        config_width = print_config.first_layer_extrusion_width;
-    } else if (role == frExternalPerimeter) {
-        config_width = m_config.external_perimeter_extrusion_width;
-    } else if (role == frPerimeter) {
-        config_width = m_config.perimeter_extrusion_width;
-    } else if (role == frInfill) {
-        config_width = m_config.infill_extrusion_width;
-    } else if (role == frSolidInfill) {
-        config_width = m_config.solid_infill_extrusion_width;
-    } else if (role == frTopSolidInfill) {
-        config_width = m_config.top_infill_extrusion_width;
-    } else {
-        throw Slic3r::InvalidArgument("Unknown role");
+    if (first_layer) {
+        config_width = resolve_filament_override(
+            print_config, "filament_first_layer_extrusion_width", extruder_id, print_config.first_layer_extrusion_width);
+    }
+
+    if (config_width.value == 0) {
+        const char *base_key = nullptr;
+        switch (role) {
+        case frExternalPerimeter: base_key = "external_perimeter_extrusion_width"; break;
+        case frPerimeter:         base_key = "perimeter_extrusion_width";         break;
+        case frInfill:            base_key = "infill_extrusion_width";            break;
+        case frSolidInfill:       base_key = "solid_infill_extrusion_width";      break;
+        case frTopSolidInfill:    base_key = "top_infill_extrusion_width";        break;
+        default:
+            throw Slic3r::InvalidArgument("Unknown role");
+        }
+        const ConfigOptionFloatOrPercent *base_width = m_config.opt<ConfigOptionFloatOrPercent>(base_key);
+        ConfigOptionFloatOrPercent        fallback(0, false);
+        config_width = resolve_filament_override(
+            print_config, std::string("filament_") + base_key, extruder_id,
+            base_width ? *base_width : fallback);
     }
 
     if (config_width.value == 0)
-        config_width = object.config().extrusion_width;
-    
+        config_width = resolve_filament_override(
+            print_config, "filament_extrusion_width", extruder_id, object.config().extrusion_width);
+
     // Get the configured nozzle_diameter for the extruder associated to the flow role requested.
     // Here this->extruder(role) - 1 may underflow to MAX_INT, but then the get_at() will follback to zero'th element, so everything is all right.
     auto nozzle_diameter = float(print_config.nozzle_diameter.get_at(this->extruder(role) - 1));
@@ -73,7 +82,13 @@ coordf_t PrintRegion::nozzle_dmr_avg(const PrintConfig &print_config) const
 
 coordf_t PrintRegion::bridging_height_avg(const PrintConfig &print_config) const
 {
-    return this->nozzle_dmr_avg(print_config) * sqrt(m_config.bridge_flow_ratio.value);
+    auto bridge_height = [this, &print_config](FlowRole role) -> coordf_t {
+        const unsigned int extruder_id = this->extruder(role) - 1;
+        const ConfigOptionFloat bridge_flow_ratio = resolve_filament_override(
+            print_config, "filament_bridge_flow_ratio", extruder_id, m_config.bridge_flow_ratio);
+        return print_config.nozzle_diameter.get_at(extruder_id) * sqrt(bridge_flow_ratio.value);
+    };
+    return (bridge_height(frPerimeter) + bridge_height(frInfill) + bridge_height(frSolidInfill)) / 3.;
 }
 
 void PrintRegion::collect_object_printing_extruders(

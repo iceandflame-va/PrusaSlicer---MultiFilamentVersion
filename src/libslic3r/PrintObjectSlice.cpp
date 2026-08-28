@@ -959,9 +959,18 @@ void PrintObject::slice_volumes()
         // Compensation value, scaled. Only applying the negative scaling here, as the positive scaling has already been applied during slicing.
         const size_t num_extruders = print->config().nozzle_diameter.size();
         const auto   xy_compensation_scaled            = (num_extruders > 1 && this->is_mm_painted()) ? scaled<float>(0.f) : scaled<float>(std::min(m_config.xy_size_compensation.value, 0.));
+
+        // Resolve the per-filament elephant foot compensation override for the first layer extruder.
+        unsigned int first_layer_extruder_id = (unsigned)-1;
+        if (! m_layers.empty() && ! m_layers.front()->regions().empty())
+            first_layer_extruder_id = m_layers.front()->regions().front()->region().extruder(frExternalPerimeter) - 1;
+        const float elefant_foot_compensation = resolve_filament_override(
+            print->config(), "filament_elefant_foot_compensation", first_layer_extruder_id,
+            m_config.elefant_foot_compensation).value;
+
         const float  elephant_foot_compensation_scaled = (m_config.raft_layers == 0) ?
         	// Only enable Elephant foot compensation if printing directly on the print bed.
-            float(scale_(m_config.elefant_foot_compensation.value)) :
+            float(scale_(elefant_foot_compensation)) :
         	0.f;
         // Uncompensated slices for the first layer in case the Elephant foot compensation is applied.
 	    ExPolygons  lslices_1st_layer;

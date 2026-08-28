@@ -310,16 +310,20 @@ std::pair<double, double> adaptive_fill_line_spacing(const PrintObject &print_ob
     double                     max_nozzle_diameter            = *std::max_element(nozzle_diameters.begin(), nozzle_diameters.end());
     double                     default_infill_extrusion_width = Flow::auto_extrusion_width(FlowRole::frInfill, float(max_nozzle_diameter));
     for (size_t region_id = 0; region_id < print_object.num_printing_regions(); ++ region_id) {
-        const PrintRegionConfig &config                 = print_object.printing_region(region_id).config();
+        const PrintRegion       &region                 = print_object.printing_region(region_id);
+        const PrintRegionConfig &config                 = region.config();
+        const unsigned int       infill_extruder_id     = (region.extruder(frInfill) > 0) ? unsigned(region.extruder(frInfill) - 1) : (unsigned)-1;
+        const ConfigOptionFloatOrPercent infill_extrusion_width = resolve_filament_override(
+            print_object.print()->config(), "filament_infill_extrusion_width", infill_extruder_id, config.infill_extrusion_width);
         bool                     nonempty               = config.fill_density > 0;
         bool                     has_adaptive_infill    = nonempty && config.fill_pattern == ipAdaptiveCubic;
         bool                     has_support_infill     = nonempty && config.fill_pattern == ipSupportCubic;
-        double                   infill_extrusion_width = config.infill_extrusion_width.percent ? default_infill_extrusion_width * 0.01 * config.infill_extrusion_width : config.infill_extrusion_width;
+        double                   infill_extrusion_width_value = infill_extrusion_width.percent ? default_infill_extrusion_width * 0.01 * infill_extrusion_width.value : infill_extrusion_width.value;
         region_fill_data.push_back(RegionFillData({
             has_adaptive_infill ? Tristate::Maybe : Tristate::No,
             has_support_infill ? Tristate::Maybe : Tristate::No,
             config.fill_density,
-            infill_extrusion_width != 0. ? infill_extrusion_width : default_infill_extrusion_width
+            infill_extrusion_width_value != 0. ? infill_extrusion_width_value : default_infill_extrusion_width
         }));
         build_octree |= has_adaptive_infill || has_support_infill;
     }

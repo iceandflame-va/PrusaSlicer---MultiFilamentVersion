@@ -292,7 +292,27 @@ static t_config_option_keys apply_advanced_filament_overrides(
     const std::string               filament_prefix = "filament_";
     t_config_option_keys            changed_keys;
 
+    // These advanced overrides are applied per extruder at the point of use
+    // (Flow, PerimeterGenerator, LayerRegion etc.) instead of being flattened
+    // to a single print-wide value.
+    static const std::vector<std::string> per_extruder_override_keys = {
+        "bridge_flow_ratio",
+        "elefant_foot_compensation",
+        "external_perimeter_extrusion_width",
+        "extrusion_width",
+        "first_layer_extrusion_width",
+        "infill_extrusion_width",
+        "infill_overlap",
+        "perimeter_extrusion_width",
+        "solid_infill_extrusion_width",
+        "support_material_extrusion_width",
+        "top_infill_extrusion_width",
+    };
+
     for (const t_config_option_key &opt_key : override_keys) {
+        if (std::binary_search(per_extruder_override_keys.begin(), per_extruder_override_keys.end(), opt_key))
+            continue;
+
         const std::string filament_key = filament_prefix + opt_key;
         const ConfigOption *opt_filament = new_full_config.option(filament_key);
         if (opt_filament == nullptr || opt_filament->is_nil())
@@ -1354,7 +1374,7 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
         // As long as these config options don't reallocate memory when copying, we are safe overriding a value, which is in use by a worker thread.
 	    m_config.apply(filament_overrides);
         if (! advanced_diff.empty())
-            m_config.apply(advanced_overrides);
+            m_config.apply(advanced_overrides, true);
 	    // Handle changes to object config defaults
 	    m_default_object_config.apply_only(new_full_config, object_diff, true);
 	    // Handle changes to regions config defaults

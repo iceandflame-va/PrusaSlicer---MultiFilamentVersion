@@ -567,7 +567,17 @@ void Layer::build_up_down_graph(Layer& below, Layer& above)
 
 static inline bool layer_needs_raw_backup(const Layer *layer)
 {
-    return ! (layer->regions().size() == 1 && (layer->id() > 0 || layer->object()->config().elefant_foot_compensation.value == 0));
+    if (layer->regions().size() != 1)
+        return true;
+    if (layer->id() > 0)
+        return false;
+    // Resolve the per-filament elephant foot compensation override for the first layer external perimeter extruder.
+    const LayerRegion       *layerm    = layer->regions().front();
+    const unsigned int       extruder  = layerm->region().extruder(frExternalPerimeter) - 1;
+    const ConfigOptionFloat  ef        = resolve_filament_override(
+        layer->object()->print()->config(), "filament_elefant_foot_compensation", extruder,
+        layer->object()->config().elefant_foot_compensation);
+    return ef.value != 0;
 }
 
 void Layer::backup_untyped_slices()
@@ -659,6 +669,7 @@ inline bool has_compatible_layer_regions(const PrintRegionConfig &config, const 
            config.opt_serialize("perimeter_extrusion_width")     == other_config.opt_serialize("perimeter_extrusion_width") &&
            config.thin_walls                                            == other_config.thin_walls &&
            config.external_perimeters_first                             == other_config.external_perimeters_first &&
+           config.infill_extruder                                       == other_config.infill_extruder &&
            config.infill_overlap                                        == other_config.infill_overlap &&
            has_compatible_dynamic_overhang_speed(config, other_config);
 }

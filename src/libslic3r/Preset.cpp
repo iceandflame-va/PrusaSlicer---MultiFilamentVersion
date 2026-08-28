@@ -541,6 +541,7 @@ static std::vector<std::string> s_Preset_filament_options {
     "filament_infill_extrusion_width", "filament_solid_infill_extrusion_width", "filament_top_infill_extrusion_width", "filament_support_material_extrusion_width",
     "filament_automatic_extrusion_widths", "filament_infill_overlap", "filament_bridge_flow_ratio",
     "filament_slice_closing_radius", "filament_resolution", "filament_gcode_resolution", "filament_xy_size_compensation",
+    "filament_elefant_foot_compensation",
     "filament_wall_transition_angle", "filament_wall_transition_filter_deviation", "filament_wall_transition_length", "filament_wall_distribution_count",
     "filament_min_bead_width", "filament_min_feature_size",
     // Profile compatibility

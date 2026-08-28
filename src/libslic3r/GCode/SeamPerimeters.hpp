@@ -47,7 +47,7 @@ struct PointOnPerimeter
 struct LayerInfo
 {
     static LayerInfo create(
-        const Slic3r::Layer &object_layer, std::size_t index, const double elephant_foot_compensation
+        const Slic3r::Layer &object_layer, std::size_t index
     );
 
     AABBTreeLines::LinesDistancer<Linef> distancer;
@@ -64,7 +64,7 @@ using LayerInfos = std::vector<LayerInfo>;
  * @brief Construct LayerInfo for each of the provided layers.
  */
 LayerInfos get_layer_infos(
-    tcb::span<const Slic3r::Layer* const> object_layers, const double elephant_foot_compensation
+    tcb::span<const Slic3r::Layer* const> object_layers
 );
 
 struct PerimeterPoint {
@@ -117,7 +117,6 @@ namespace Slic3r::Seams::Perimeters {
 
 struct PerimeterParams
 {
-    double elephant_foot_compensation{};
     double oversampling_max_distance{};
     double embedding_threshold{};
     double overhang_threshold{};

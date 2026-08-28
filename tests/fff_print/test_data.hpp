@@ -218,7 +218,7 @@ struct SeamsFixture
     const std::vector<Seams::Geometry::Extrusions> extrusions{
         Seams::Geometry::get_extrusions(print_object->layers())};
     const Seams::Perimeters::LayerInfos layer_infos{Seams::Perimeters::get_layer_infos(
-        print_object->layers(), params.perimeter.elephant_foot_compensation
+        print_object->layers()
     )};
     const std::vector<Seams::Geometry::BoundedPolygons> projected{
         Seams::Geometry::project_to_geometry(extrusions, params.max_distance)};

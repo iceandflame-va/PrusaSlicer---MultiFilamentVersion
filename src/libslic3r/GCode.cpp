@@ -1125,7 +1125,10 @@ void GCodeGenerator::_do_export(Print& print, GCodeOutputStream &file, Thumbnail
             file.write_format("; top infill extrusion width = %.2fmm\n",          region.flow(*first_object, frTopSolidInfill,    layer_height).width());
             if (print.has_support_material())
                 file.write_format("; support material extrusion width = %.2fmm\n", support_material_flow(first_object).width());
-            if (print.config().first_layer_extrusion_width.value > 0)
+            const unsigned int first_layer_perimeter_extruder_id = (region.extruder(frPerimeter) > 0) ? unsigned(region.extruder(frPerimeter) - 1) : (unsigned)-1;
+            const ConfigOptionFloatOrPercent first_layer_extrusion_width = resolve_filament_override(
+                print.config(), "filament_first_layer_extrusion_width", first_layer_perimeter_extruder_id, print.config().first_layer_extrusion_width);
+            if (first_layer_extrusion_width.value > 0)
                 file.write_format("; first layer extrusion width = %.2fmm\n",   region.flow(*first_object, frPerimeter, first_layer_height, true).width());
             file.write_format("\n");
         }
@@ -1757,18 +1760,25 @@ std::string GCodeGenerator::placeholder_parser_process(
             const auto& placeholders = it->second;
 
             for (const std::string& key : config_override->keys()) {
-                // 2-nd check: "key" have to be present in s_CustomGcodeSpecificOptions for "name" custom G-code ;
-                if (std::find(placeholders.begin(), placeholders.end(), key) == placeholders.end())
+                // 2-nd check: "key" have to be present in s_CustomGcodeSpecificOptions for "name" custom G-code
+                // or it is a regular option from the print configuration definition;
+                if (std::find(placeholders.begin(), placeholders.end(), key) == placeholders.end() && !print_config_def.has(key))
                     throw Slic3r::PlaceholderParserError(format("\"%s\" placeholder for \"%s\" custom G-code \n"
                                                                 "needs to be added to s_CustomGcodeSpecificOptions", key.c_str(), name.c_str()));
-                // 3-rd check: "key" have to be present in CustomGcodeSpecificConfigDef for "key" placeholder;
-                if (!custom_gcode_specific_config_def.has(key))
+                // 3-rd check: "key" have to be present in CustomGcodeSpecificConfigDef for "key" placeholder
+                // or in the print configuration definition;
+                if (!custom_gcode_specific_config_def.has(key) && !print_config_def.has(key))
                     throw Slic3r::PlaceholderParserError(format("Definition of \"%s\" placeholder \n"
                                                                 "needs to be added to CustomGcodeSpecificConfigDef", key.c_str()));
             }
         }
-        else
-            throw Slic3r::PlaceholderParserError(format("\"%s\" custom G-code needs to be added to s_CustomGcodeSpecificOptions", name.c_str()));
+        else {
+            // Custom G-code itself is not in s_CustomGcodeSpecificOptions, but it may still override
+            // regular PrintConfig options (e.g. start_gcode overrides first_layer_bed_temperature).
+            for (const std::string& key : config_override->keys())
+                if (!print_config_def.has(key))
+                    throw Slic3r::PlaceholderParserError(format("\"%s\" custom G-code needs to be added to s_CustomGcodeSpecificOptions", name.c_str()));
+        }
     }
 #endif
 

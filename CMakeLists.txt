@@ -130,8 +130,13 @@ else ()
 endif ()
 
 if (MSVC)
+    if (NOT IS_CLANG_CL)
+        # /FS is needed whenever multiple cl.exe invocations can write the same
+        # PDB. Ninja does this even when /MP is disabled, so add it unconditionally.
+        add_compile_options(/FS)
+    endif ()
     if (SLIC3R_MSVC_COMPILE_PARALLEL AND NOT IS_CLANG_CL)
-           add_compile_options(/MP)
+        add_compile_options(/MP)
     endif ()
     # /bigobj (Increase Number of Sections in .Obj file)
     # error C3859: virtual memory range for PCH exceeded; please recompile with a command line option of '-Zm90' or greater

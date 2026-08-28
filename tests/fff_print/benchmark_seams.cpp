@@ -31,7 +31,7 @@ TEST_CASE_METHOD(Slic3r::Test::SeamsFixture, "Seam benchmarks", "[Seams][.Benchm
     BENCHMARK_ADVANCED("Get layer infos benchy")(Catch::Benchmark::Chronometer meter) {
         meter.measure([&] {
             return Perimeters::get_layer_infos(
-                print_object->layers(), params.perimeter.elephant_foot_compensation
+                print_object->layers()
             );
         });
     };

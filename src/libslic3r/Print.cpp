@@ -326,6 +326,27 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             steps.emplace_back(psGCodeExport);
         } else if (opt_key == "automatic_extrusion_widths" || opt_key == "filament_automatic_extrusion_widths") {
             osteps.emplace_back(posPerimeters);
+        } else if (
+               opt_key == "filament_extrusion_width"
+            || opt_key == "filament_first_layer_extrusion_width"
+            || opt_key == "filament_perimeter_extrusion_width"
+            || opt_key == "filament_external_perimeter_extrusion_width"
+            || opt_key == "filament_infill_extrusion_width"
+            || opt_key == "filament_solid_infill_extrusion_width"
+            || opt_key == "filament_top_infill_extrusion_width"
+            || opt_key == "filament_support_material_extrusion_width"
+            || opt_key == "filament_infill_overlap") {
+            osteps.emplace_back(posPerimeters);
+            osteps.emplace_back(posPrepareInfill);
+            osteps.emplace_back(posInfill);
+            osteps.emplace_back(posSupportMaterial);
+            steps.emplace_back(psSkirtBrim);
+        } else if (opt_key == "filament_bridge_flow_ratio") {
+            osteps.emplace_back(posPerimeters);
+            osteps.emplace_back(posInfill);
+            osteps.emplace_back(posSupportMaterial);
+        } else if (opt_key == "filament_elefant_foot_compensation") {
+            osteps.emplace_back(posSlice);
         } else if (opt_key == "toolchange_ordering") {
             steps.emplace_back(psWipeTower);
         } else {
@@ -869,11 +890,18 @@ double Print::skirt_first_layer_height() const
 
 Flow Print::brim_flow() const
 {
-    ConfigOptionFloatOrPercent width = m_config.first_layer_extrusion_width;
+    // Resolve per-filament overrides for the (first) perimeter extruder used for brim.
+    const unsigned int extruder_id = (m_print_regions.front()->config().perimeter_extruder.value > 0) ?
+        unsigned(m_print_regions.front()->config().perimeter_extruder.value) - 1 : (unsigned)-1;
+
+    ConfigOptionFloatOrPercent width = resolve_filament_override(
+        m_config, "filament_first_layer_extrusion_width", extruder_id, m_config.first_layer_extrusion_width);
     if (width.value == 0) 
-        width = m_print_regions.front()->config().perimeter_extrusion_width;
+        width = resolve_filament_override(
+            m_config, "filament_perimeter_extrusion_width", extruder_id, m_print_regions.front()->config().perimeter_extrusion_width);
     if (width.value == 0) 
-        width = m_objects.front()->config().extrusion_width;
+        width = resolve_filament_override(
+            m_config, "filament_extrusion_width", extruder_id, m_objects.front()->config().extrusion_width);
     
     /* We currently use a random region's perimeter extruder.
        While this works for most cases, we should probably consider all of the perimeter
@@ -889,11 +917,18 @@ Flow Print::brim_flow() const
 
 Flow Print::skirt_flow() const
 {
-    ConfigOptionFloatOrPercent width = m_config.first_layer_extrusion_width;
+    // Resolve per-filament overrides for the (first) perimeter extruder used for skirt.
+    const unsigned int extruder_id = (m_print_regions.front()->config().perimeter_extruder.value > 0) ?
+        unsigned(m_print_regions.front()->config().perimeter_extruder.value) - 1 : (unsigned)-1;
+
+    ConfigOptionFloatOrPercent width = resolve_filament_override(
+        m_config, "filament_first_layer_extrusion_width", extruder_id, m_config.first_layer_extrusion_width);
     if (width.value == 0) 
-        width = m_print_regions.front()->config().perimeter_extrusion_width;
+        width = resolve_filament_override(
+            m_config, "filament_perimeter_extrusion_width", extruder_id, m_print_regions.front()->config().perimeter_extrusion_width);
     if (width.value == 0)
-        width = m_objects.front()->config().extrusion_width;
+        width = resolve_filament_override(
+            m_config, "filament_extrusion_width", extruder_id, m_objects.front()->config().extrusion_width);
     
     /* We currently use a random object's support material extruder.
        While this works for most cases, we should probably consider all of the support material

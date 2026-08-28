@@ -65,20 +65,26 @@ SupportParameters::SupportParameters(const PrintObject &object)
     }
 
     // Evaluate the XY gap between the object outer perimeters and the support structures.
-    // Evaluate the XY gap between the object outer perimeters and the support structures.
     coordf_t external_perimeter_width = 0.;
-    coordf_t bridge_flow_ratio = 0;
+    double bridge_flow_ratio_base = 0.;
     for (size_t region_id = 0; region_id < object.num_printing_regions(); ++ region_id) {
         const PrintRegion &region = object.printing_region(region_id);
         external_perimeter_width = std::max(external_perimeter_width, coordf_t(region.flow(object, frExternalPerimeter, slicing_params.layer_height).width()));
-        bridge_flow_ratio += region.config().bridge_flow_ratio;
+        bridge_flow_ratio_base += region.config().bridge_flow_ratio.value;
     }
+    if (object.num_printing_regions() > 0)
+        bridge_flow_ratio_base /= object.num_printing_regions();
     this->gap_xy = object_config.support_material_xy_spacing.get_abs_value(external_perimeter_width);
-    bridge_flow_ratio /= object.num_printing_regions();
+
+    // Resolve the per-filament bridge flow ratio override for the support interface extruder.
+    const unsigned int support_interface_extruder_id = (object_config.support_material_interface_extruder.value > 0) ?
+        unsigned(object_config.support_material_interface_extruder.value - 1) : (unsigned)-1;
+    const ConfigOptionFloat bridge_flow_ratio = resolve_filament_override(
+        print_config, "filament_bridge_flow_ratio", support_interface_extruder_id, ConfigOptionFloat(bridge_flow_ratio_base));
 
     this->support_material_bottom_interface_flow = slicing_params.soluble_interface || ! object_config.thick_bridges ?
-        this->support_material_interface_flow.with_flow_ratio(bridge_flow_ratio) :
-        Flow::bridging_flow(bridge_flow_ratio * this->support_material_interface_flow.nozzle_diameter(), this->support_material_interface_flow.nozzle_diameter());
+        this->support_material_interface_flow.with_flow_ratio(bridge_flow_ratio.value) :
+        Flow::bridging_flow(bridge_flow_ratio.value * this->support_material_interface_flow.nozzle_diameter(), this->support_material_interface_flow.nozzle_diameter());
 
     this->can_merge_support_regions = object_config.support_material_extruder.value == object_config.support_material_interface_extruder.value;
     if (!this->can_merge_support_regions && (object_config.support_material_extruder.value == 0 || object_config.support_material_interface_extruder.value == 0)) {

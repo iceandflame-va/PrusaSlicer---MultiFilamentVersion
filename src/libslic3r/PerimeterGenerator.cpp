@@ -1142,7 +1142,7 @@ void PerimeterGenerator::process_arachne(
             // two or more loops?
             perimeter_spacing;
 
-    inset = coord_t(scale_(params.config.get_abs_value("infill_overlap", unscale<double>(inset))));
+    inset = coord_t(scale_(params.infill_overlap.get_abs_value(unscale<double>(inset))));
     Polygons pp;
     for (ExPolygon &ex : infill_contour)
         ex.simplify_p(params.scaled_resolution, &pp);
@@ -1378,7 +1378,11 @@ void PerimeterGenerator::process_classic(
                     top_fills = diff_ex(fill_clip, not_top_polygons, ApplySafetyOffset::Yes);
 
                     // Set the clip to the external perimeter but go back inside by infill_extrusion_width/2 to ensure the extrusion won't go outside even with a 100% overlap.
-                    fill_clip = offset_ex(last, float((coordf_t(ext_perimeter_spacing) / 2.) - params.config.infill_extrusion_width.get_abs_value(params.solid_infill_flow.nozzle_diameter()) / 2.));
+                    const ConfigOptionFloatOrPercent infill_extrusion_width = resolve_filament_override(
+                        params.print_config, "filament_infill_extrusion_width",
+                        params.config.solid_infill_extruder.value > 0 ? unsigned(params.config.solid_infill_extruder.value) - 1 : (unsigned)-1,
+                        params.config.infill_extrusion_width);
+                    fill_clip = offset_ex(last, float((coordf_t(ext_perimeter_spacing) / 2.) - infill_extrusion_width.get_abs_value(params.solid_infill_flow.nozzle_diameter()) / 2.));
                     last      = intersection_ex(not_top_polygons, last);
 
                     if (has_gap_fill)
@@ -1501,7 +1505,7 @@ void PerimeterGenerator::process_classic(
             perimeter_spacing / 2;
 
     // Only apply infill overlap if we actually have one perimeter.
-    const coord_t infill_perimeter_overlap = (inset > 0) ? coord_t(params.config.get_abs_value("infill_overlap", coordf_t(inset + solid_infill_spacing / 2.))) : 0;
+    const coord_t infill_perimeter_overlap = (inset > 0) ? coord_t(params.infill_overlap.get_abs_value(coordf_t(inset + solid_infill_spacing / 2.))) : 0;
     inset -= infill_perimeter_overlap;
 
     // simplify infill contours according to resolution

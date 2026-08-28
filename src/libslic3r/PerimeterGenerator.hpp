@@ -75,7 +75,11 @@ struct Parameters {
             scaled_resolution(scaled<double>(print_config.gcode_resolution.value)),
             mm3_per_mm(perimeter_flow.mm3_per_mm()),
             ext_mm3_per_mm(ext_perimeter_flow.mm3_per_mm()), 
-            mm3_per_mm_overhang(overhang_flow.mm3_per_mm())
+            mm3_per_mm_overhang(overhang_flow.mm3_per_mm()),
+            infill_overlap(resolve_filament_override(
+                print_config, "filament_infill_overlap",
+                config.infill_extruder.value > 0 ? unsigned(config.infill_extruder.value) - 1 : (unsigned)-1,
+                config.infill_overlap))
         {
         }
 
@@ -93,6 +97,7 @@ struct Parameters {
 
     // Derived parameters
     bool                         spiral_vase;
+    ConfigOptionFloatOrPercent   infill_overlap;
     double                       scaled_resolution;
     double                       ext_mm3_per_mm;
     double                       mm3_per_mm;

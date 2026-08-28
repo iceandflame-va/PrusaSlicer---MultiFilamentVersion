@@ -4101,8 +4101,8 @@ void PrintConfigDef::init_fff_params()
         def->mode       = it_opt->second.mode;
         def->ratio_over = it_opt->second.ratio_over;
         switch (def->type) {
-        case coFloats: def->set_default_value(new ConfigOptionFloatsNullable{static_cast<const ConfigOptionFloat*>(it_opt->second.default_value.get())->value}); break;
-        case coBools:  def->set_default_value(new ConfigOptionBoolsNullable{static_cast<const ConfigOptionBool*>(it_opt->second.default_value.get())->value}); break;
+        case coFloats: def->set_default_value(new ConfigOptionFloatsNullable{ConfigOptionFloatsNullable::nil_value()}); break;
+        case coBools:  def->set_default_value(new ConfigOptionBoolsNullable{ConfigOptionBoolsNullable::nil_value()}); break;
         default: assert(false);
         }
     }
@@ -4140,8 +4140,7 @@ void PrintConfigDef::init_fff_params()
 
         switch (def->type) {
             case coFloatsOrPercents: {
-                const auto &default_value = *static_cast<const ConfigOptionFloatOrPercent *>(it_opt->second.default_value.get());
-                def->set_default_value(new ConfigOptionFloatsOrPercentsNullable{{default_value.value, default_value.percent}});
+                def->set_default_value(new ConfigOptionFloatsOrPercentsNullable{{ConfigOptionFloatsOrPercentsNullable::nil_value()}});
                 break;
             }
             default: {
@@ -4156,7 +4155,7 @@ void PrintConfigDef::init_fff_params()
     // The list of keys must match m_advanced_override_keys initialized in init_extruder_option_keys().
     for (const char *opt_key : {
         // Floats
-        "bridge_flow_ratio", "resolution", "gcode_resolution",
+        "bridge_flow_ratio", "elefant_foot_compensation", "resolution", "gcode_resolution",
         "slice_closing_radius", "xy_size_compensation", "wall_transition_angle",
         // FloatsOrPercents
         "extrusion_width", "first_layer_extrusion_width", "perimeter_extrusion_width",
@@ -4185,23 +4184,19 @@ void PrintConfigDef::init_fff_params()
         def->ratio_over = it_opt->second.ratio_over;
         switch (def->type) {
         case coFloats: {
-            const auto *dv = static_cast<const ConfigOptionFloat*>(it_opt->second.default_value.get());
-            def->set_default_value(new ConfigOptionFloatsNullable{dv->value});
+            def->set_default_value(new ConfigOptionFloatsNullable{ConfigOptionFloatsNullable::nil_value()});
             break;
         }
         case coBools: {
-            const auto *dv = static_cast<const ConfigOptionBool*>(it_opt->second.default_value.get());
-            def->set_default_value(new ConfigOptionBoolsNullable{dv->value});
+            def->set_default_value(new ConfigOptionBoolsNullable{ConfigOptionBoolsNullable::nil_value()});
             break;
         }
         case coInts: {
-            const auto *dv = static_cast<const ConfigOptionInt*>(it_opt->second.default_value.get());
-            def->set_default_value(new ConfigOptionIntsNullable{dv->value});
+            def->set_default_value(new ConfigOptionIntsNullable{ConfigOptionIntsNullable::nil_value()});
             break;
         }
         case coFloatsOrPercents: {
-            const auto *dv = static_cast<const ConfigOptionFloatOrPercent*>(it_opt->second.default_value.get());
-            def->set_default_value(new ConfigOptionFloatsOrPercentsNullable{{dv->value, dv->percent}});
+            def->set_default_value(new ConfigOptionFloatsOrPercentsNullable{{ConfigOptionFloatsOrPercentsNullable::nil_value()}});
             break;
         }
         default: assert(false); break;
@@ -4245,6 +4240,7 @@ void PrintConfigDef::init_extruder_option_keys()
     m_advanced_override_keys = {
         "automatic_extrusion_widths",
         "bridge_flow_ratio",
+        "elefant_foot_compensation",
         "external_perimeter_extrusion_width",
         "extrusion_width",
         "first_layer_extrusion_width",

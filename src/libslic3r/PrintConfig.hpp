@@ -938,6 +938,7 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloatsNullable,      filament_resolution))
     ((ConfigOptionFloatsNullable,      filament_gcode_resolution))
     ((ConfigOptionFloatsNullable,      filament_xy_size_compensation))
+    ((ConfigOptionFloatsNullable,      filament_elefant_foot_compensation))
     // Arachne perimeter generator
     ((ConfigOptionFloatsNullable,      filament_wall_transition_angle))
     ((ConfigOptionFloatsOrPercentsNullable, filament_wall_transition_filter_deviation))
@@ -1665,6 +1666,39 @@ private:
 
     static uint64_t             s_last_timestamp;
 };
+
+// Resolve a per-filament advanced override for a single-value option.
+// If the nullable per-filament vector contains a non-nil value for the given
+// 0-based extruder, that value is returned; otherwise the base value is
+// returned unchanged.
+inline ConfigOptionFloatOrPercent resolve_filament_override(
+    const ConfigBase &config,
+    const std::string &filament_key,
+    unsigned int extruder_id,
+    const ConfigOptionFloatOrPercent &base)
+{
+    if (const auto *filament = config.opt<ConfigOptionFloatsOrPercentsNullable>(filament_key)) {
+        if (extruder_id < filament->values.size() && !filament->is_nil(extruder_id)) {
+            const FloatOrPercent &v = filament->get_at(extruder_id);
+            return ConfigOptionFloatOrPercent(v.value, v.percent);
+        }
+    }
+    return base;
+}
+
+inline ConfigOptionFloat resolve_filament_override(
+    const ConfigBase &config,
+    const std::string &filament_key,
+    unsigned int extruder_id,
+    const ConfigOptionFloat &base)
+{
+    if (const auto *filament = config.opt<ConfigOptionFloatsNullable>(filament_key)) {
+        if (extruder_id < filament->values.size() && !filament->is_nil(extruder_id)) {
+            return ConfigOptionFloat(filament->get_at(extruder_id));
+        }
+    }
+    return base;
+}
 
 } // namespace Slic3r
 

@@ -9,6 +9,8 @@
 
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/Layer.hpp"
+#include "libslic3r/Print.hpp"
+#include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/GCode/SeamGeometry.hpp"
 #include "libslic3r/GCode/SeamPerimeters.hpp"
 #include "libslic3r/ExPolygon.hpp"
@@ -334,7 +336,7 @@ PerimeterPoints get_perimeter_points(const std::vector<Vec2d> &points){
 namespace Slic3r::Seams::Perimeters {
 
 LayerInfos get_layer_infos(
-    tcb::span<const Slic3r::Layer* const> object_layers, const double elephant_foot_compensation
+    tcb::span<const Slic3r::Layer* const> object_layers
 ) {
     LayerInfos result(object_layers.size());
 
@@ -343,7 +345,7 @@ LayerInfos get_layer_infos(
     tbb::parallel_for(range, [&](Range range) {
         for (std::size_t layer_index{range.begin()}; layer_index < range.end(); ++layer_index) {
             result[layer_index] = LayerInfo::create(
-                *object_layers[layer_index], layer_index, elephant_foot_compensation
+                *object_layers[layer_index], layer_index
             );
         }
     });
@@ -352,8 +354,7 @@ LayerInfos get_layer_infos(
 
 LayerInfo LayerInfo::create(
     const Slic3r::Layer &object_layer,
-    const std::size_t index,
-    const double elephant_foot_compensation
+    const std::size_t index
 ) {
     AABBTreeLines::LinesDistancer<Linef> perimeter_distancer{
         to_unscaled_linesf({object_layer.lslices})};
@@ -365,13 +366,27 @@ LayerInfo LayerInfo::create(
             to_unscaled_linesf(object_layer.lower_layer->lslices)};
     }
 
+    double elephant_foot_compensation = 0.0;
+    if (index == 0 && object_layer.object()->config().raft_layers == 0) {
+        unsigned int extruder_id = (unsigned)-1;
+        const LayerRegionPtrs &regions = object_layer.regions();
+        if (! regions.empty()) {
+            const unsigned int extruder = regions.front()->region().extruder(frExternalPerimeter);
+            if (extruder > 0)
+                extruder_id = extruder - 1;
+        }
+        elephant_foot_compensation = Slic3r::resolve_filament_override(
+            object_layer.object()->print()->config(), "filament_elefant_foot_compensation", extruder_id,
+            object_layer.object()->config().elefant_foot_compensation).value;
+    }
+
     return {
         std::move(perimeter_distancer),
         std::move(previous_layer_perimeter_distancer),
         index,
         object_layer.height,
         object_layer.slice_z,
-        index == 0 ? elephant_foot_compensation : 0.0};
+        elephant_foot_compensation};
 }
 
 double Perimeter::IndexToCoord::operator()(const size_t index, size_t dim) const {

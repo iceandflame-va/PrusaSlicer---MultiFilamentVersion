@@ -13,6 +13,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/format.hpp>
 #include <cmath>
+#include <limits>
 
 #include "I18N.hpp"
 #include "Print.hpp"
@@ -250,10 +251,18 @@ Flow support_material_flow(const PrintObject *object, float layer_height)
     // If object->config().support_material_extruder == 0 (which means to not trigger tool change, but use the current extruder instead), use the smallest nozzle diameter.
     const float nozzle_diameter = extruder >= 0 ? static_cast<float>(print_config.nozzle_diameter.get_at(extruder)) : min_nozzle_diameter(*object);
 
+    // Resolve the per-filament support material extrusion width override for the fixed support extruder.
+    const unsigned int extruder_id = extruder >= 0 ? unsigned(extruder) : std::numeric_limits<unsigned int>::max();
+    ConfigOptionFloatOrPercent width = resolve_filament_override(
+        print_config, "filament_support_material_extrusion_width", extruder_id, object->config().support_material_extrusion_width);
+    if (width.value == 0)
+        width = resolve_filament_override(
+            print_config, "filament_extrusion_width", extruder_id, object->config().extrusion_width);
+
     return Flow::new_from_config_width(
         frSupportMaterial,
         // The width parameter accepted by new_from_config_width is of type ConfigOptionFloatOrPercent, the Flow class takes care of the percent to value substitution.
-        (object->config().support_material_extrusion_width.value > 0) ? object->config().support_material_extrusion_width : object->config().extrusion_width,
+        width,
         nozzle_diameter,
         (layer_height > 0.f) ? layer_height : float(object->config().layer_height.value));
 }
@@ -265,12 +274,21 @@ Flow support_material_1st_layer_flow(const PrintObject *object, float layer_heig
 
     // If object->config().support_material_extruder == 0 (which means to not trigger tool change, but use the current extruder instead), use the smallest nozzle diameter.
     const float nozzle_diameter = extruder >= 0 ? static_cast<float>(print_config.nozzle_diameter.get_at(extruder)) : min_nozzle_diameter(*object);
-    const auto &width           = (print_config.first_layer_extrusion_width.value > 0) ? print_config.first_layer_extrusion_width : object->config().support_material_extrusion_width;
+
+    const unsigned int extruder_id = extruder >= 0 ? unsigned(extruder) : std::numeric_limits<unsigned int>::max();
+    ConfigOptionFloatOrPercent width = resolve_filament_override(
+        print_config, "filament_first_layer_extrusion_width", extruder_id, print_config.first_layer_extrusion_width);
+    if (width.value == 0)
+        width = resolve_filament_override(
+            print_config, "filament_support_material_extrusion_width", extruder_id, object->config().support_material_extrusion_width);
+    if (width.value == 0)
+        width = resolve_filament_override(
+            print_config, "filament_extrusion_width", extruder_id, object->config().extrusion_width);
 
     return Flow::new_from_config_width(
         frSupportMaterial,
         // The width parameter accepted by new_from_config_width is of type ConfigOptionFloatOrPercent, the Flow class takes care of the percent to value substitution.
-        (width.value > 0) ? width : object->config().extrusion_width,
+        width,
         nozzle_diameter,
         (layer_height > 0.f) ? layer_height : float(print_config.first_layer_height.get_abs_value(object->config().layer_height.value)));
 }
@@ -283,10 +301,17 @@ Flow support_material_interface_flow(const PrintObject *object, float layer_heig
     // If object->config().support_material_interface_extruder == 0 (which means to not trigger tool change, but use the current extruder instead), use the smallest nozzle diameter.
     const float nozzle_diameter = extruder >= 0 ? static_cast<float>(print_config.nozzle_diameter.get_at(extruder)) : min_nozzle_diameter(*object);
 
+    const unsigned int extruder_id = extruder >= 0 ? unsigned(extruder) : std::numeric_limits<unsigned int>::max();
+    ConfigOptionFloatOrPercent width = resolve_filament_override(
+        print_config, "filament_support_material_extrusion_width", extruder_id, object->config().support_material_extrusion_width);
+    if (width.value == 0)
+        width = resolve_filament_override(
+            print_config, "filament_extrusion_width", extruder_id, object->config().extrusion_width);
+
     return Flow::new_from_config_width(
         frSupportMaterialInterface,
         // The width parameter accepted by new_from_config_width is of type ConfigOptionFloatOrPercent, the Flow class takes care of the percent to value substitution.
-        (object->config().support_material_extrusion_width > 0) ? object->config().support_material_extrusion_width : object->config().extrusion_width,
+        width,
         nozzle_diameter,
         (layer_height > 0.f) ? layer_height : float(object->config().layer_height.value));
 }

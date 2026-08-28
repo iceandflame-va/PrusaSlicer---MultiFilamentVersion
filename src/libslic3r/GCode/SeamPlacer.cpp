@@ -37,7 +37,7 @@ ObjectLayerPerimeters get_perimeters(
         const std::vector<Geometry::Extrusions> extrusions{
             Geometry::get_extrusions(print_object->layers())};
         const Perimeters::LayerInfos layer_infos{Perimeters::get_layer_infos(
-            print_object->layers(), params.perimeter.elephant_foot_compensation
+            print_object->layers()
         )};
         const std::vector<Geometry::BoundedPolygons> projected{
             Geometry::project_to_geometry(extrusions, params.max_distance)
@@ -112,10 +112,6 @@ ObjectSeams precalculate_seams(
 Params Placer::get_params(const DynamicPrintConfig &config) {
     Params params{};
 
-    params.perimeter.elephant_foot_compensation = config.opt_float("elefant_foot_compensation");
-    if (config.opt_int("raft_layers") > 0) {
-        params.perimeter.elephant_foot_compensation = 0.0;
-    }
     params.random_seed = 1653710332u;
 
     params.aligned.max_detour = 1.0;

@@ -42,17 +42,20 @@ Generator::Generator(const PrintObject &print_object, const coordf_t fill_densit
 {
     const PrintConfig         &print_config         = print_object.print()->config();
     const PrintObjectConfig   &object_config        = print_object.config();
-    const PrintRegionConfig   &region_config        = print_object.shared_regions()->all_regions.front()->config();
+    const PrintRegion         &region               = *print_object.shared_regions()->all_regions.front();
+    const PrintRegionConfig   &region_config        = region.config();
+    const unsigned int         infill_extruder_id   = (region.extruder(frInfill) > 0) ? unsigned(region.extruder(frInfill) - 1) : (unsigned)-1;
     const std::vector<double> &nozzle_diameters     = print_config.nozzle_diameter.values;
     double                     max_nozzle_diameter  = *std::max_element(nozzle_diameters.begin(), nozzle_diameters.end());
-//    const int                  infill_extruder      = region_config.infill_extruder.value;
     const double               default_infill_extrusion_width = Flow::auto_extrusion_width(FlowRole::frInfill, float(max_nozzle_diameter));
     // Note: There's not going to be a layer below the first one, so the 'initial layer height' doesn't have to be taken into account.
     const double               layer_thickness      = scaled<double>(object_config.layer_height.value);
 
-    m_infill_extrusion_width = scaled<float>(region_config.infill_extrusion_width.percent ? default_infill_extrusion_width * 0.01 * region_config.infill_extrusion_width :
-                                             region_config.infill_extrusion_width != 0.   ? region_config.infill_extrusion_width :
-                                                                                            default_infill_extrusion_width);
+    const ConfigOptionFloatOrPercent infill_extrusion_width = resolve_filament_override(
+        print_config, "filament_infill_extrusion_width", infill_extruder_id, region_config.infill_extrusion_width);
+    m_infill_extrusion_width = scaled<float>(infill_extrusion_width.percent ? default_infill_extrusion_width * 0.01 * infill_extrusion_width.value :
+                                             infill_extrusion_width.value != 0.   ? infill_extrusion_width.value :
+                                                                                    default_infill_extrusion_width);
     m_supporting_radius      = coord_t(m_infill_extrusion_width * 100. / fill_density);
 
     const double lightning_infill_overhang_angle      = M_PI / 4; // 45 degrees
