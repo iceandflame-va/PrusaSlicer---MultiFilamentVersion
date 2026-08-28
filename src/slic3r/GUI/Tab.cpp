@@ -39,6 +39,7 @@
 #include "Search.hpp"
 #include "OG_CustomCtrl.hpp"
 
+#include <set>
 #include <tuple>
 #include <wx/app.h>
 #include <wx/button.h>
@@ -2024,7 +2025,33 @@ std::vector<std::pair<std::string, std::vector<std::string>>> filament_overrides
     }},
     {"Seams", {
         "filament_seam_gap_distance"
-    }}
+    }},
+    {"Speed", {
+        "filament_max_volumetric_speed",
+        "filament_infill_max_speed",
+        "filament_infill_max_crossing_speed",
+        "filament_perimeter_speed",
+        "filament_small_perimeter_speed",
+        "filament_external_perimeter_speed",
+        "filament_infill_speed",
+        "filament_solid_infill_speed",
+        "filament_top_solid_infill_speed",
+        "filament_support_material_speed",
+        "filament_support_material_interface_speed",
+        "filament_bridge_speed",
+        "filament_over_bridge_speed",
+        "filament_gap_fill_speed",
+        "filament_ironing_speed",
+        "filament_enable_dynamic_overhang_speeds",
+        "filament_overhang_speed_0",
+        "filament_overhang_speed_1",
+        "filament_overhang_speed_2",
+        "filament_overhang_speed_3",
+        "filament_first_layer_speed",
+        "filament_first_layer_infill_speed",
+        "filament_first_layer_speed_over_raft",
+        "filament_max_print_speed"
+    }},
 };
 
 void TabFilament::add_filament_overrides_page()
@@ -2035,6 +2062,72 @@ void TabFilament::add_filament_overrides_page()
 
     for (const auto&[title, keys] : filament_overrides_option_keys) {
         ConfigOptionsGroupShp optgroup = page->new_optgroup(L(title));
+        if (title == "Speed") {
+            Line line { "", "" };
+            line.full_width = 1;
+            const std::string override_key = "override_speed_limits";
+            const std::string label_text = L("Override Speed Limits for Filament");
+            line.widget = [this, optgroup_wk = ConfigOptionsGroupWkp(optgroup), keys, extruder_idx, override_key, label_text](wxWindow* parent) {
+                wxWindow* check_box = CheckBox::GetNewWin(parent);
+                wxGetApp().UpdateDarkUI(check_box);
+                // By default the override section is disabled until the user opts in.
+                CheckBox::SetValue(check_box, false);
+
+                check_box->Bind(wxEVT_CHECKBOX, [this, optgroup_wk, keys, extruder_idx](wxCommandEvent& evt) {
+                    const bool is_checked = evt.IsChecked();
+                    auto optgroup_sh = optgroup_wk.lock();
+                    if (!optgroup_sh)
+                        return;
+                    for (const std::string& opt_key : keys) {
+                        if (wxWindow* cb = m_overrides_options[opt_key])
+                            CheckBox::SetValue(cb, is_checked);
+                        if (Field* field = optgroup_sh->get_fieldc(opt_key, extruder_idx); field != nullptr) {
+                            // Only nullable options can hold a "N/A" (nil) value. Non-nullable
+                            // options (e.g. filament_max_volumetric_speed, filament_infill_max_speed,
+                            // filament_infill_max_crossing_speed) must never be set to N/A or they
+                            // raise an "Invalid numeric input" validation error.
+                            if (m_config->option(opt_key)->nullable()) {
+                                if (is_checked)
+                                    field->set_last_meaningful_value();
+                                else
+                                    field->set_na_value();
+                            }
+                        }
+                    }
+                    // Actual enable/disable state is reconciled in update_filament_overrides_page(),
+                    // which also gates the four overhang speed fields on the dynamic overhang checkbox.
+                    update_filament_overrides_page();
+                });
+
+                m_overrides_options[override_key] = check_box;
+
+                auto* label = new wxStaticText(parent, wxID_ANY, _(label_text));
+                label->SetFont(wxGetApp().normal_font());
+                wxGetApp().UpdateDarkUI(label);
+
+                auto* sizer = new wxBoxSizer(wxHORIZONTAL);
+                sizer->Add(label, 0, wxALIGN_CENTER_VERTICAL);
+                sizer->AddSpacer(int(0.5 * wxGetApp().em_unit()));
+                sizer->Add(check_box, 0, wxALIGN_CENTER_VERTICAL);
+                return sizer;
+            };
+            optgroup->append_line(line);
+
+            // Fields intentionally have no per-field override checkbox before their
+            // name; the master checkbox above controls the whole section. Visual separators split the section into logical groups.
+            auto is_section_break_after = [](const std::string& k) {
+                return k == "filament_infill_max_crossing_speed"
+                    || k == "filament_ironing_speed"
+                    || k == "filament_overhang_speed_3"
+                    || k == "filament_first_layer_speed_over_raft";
+            };
+            for (const std::string& opt_key : keys) {
+                optgroup->append_single_option_line(optgroup->get_option(opt_key));
+                if (is_section_break_after(opt_key))
+                    optgroup->append_separator();
+            }
+            continue;
+        }
         for (const std::string& opt_key : keys) {
             create_line_with_near_label_widget(optgroup, opt_key, extruder_idx);
         }
@@ -2129,6 +2222,64 @@ void TabFilament::update_filament_overrides_page()
 
             update_line_with_near_label_widget(*optgroup, opt_key, extruder_idx, is_checked);
         }
+
+        if (title == "Speed") {
+            // Only nullable options participate in the "any override" state. Non-nullable
+            // options like filament_max_volumetric_speed always carry a numeric value, so
+            // including them would force the master checkbox to stay checked at all times.
+            const bool any_override = std::any_of(keys.begin(), keys.end(), [&](const std::string& opt_key) {
+                return m_config->option(opt_key)->nullable() && !m_config->option(opt_key)->is_nil();
+            });
+            if (wxWindow* cb = m_overrides_options["override_speed_limits"])
+                CheckBox::SetValue(cb, any_override);
+
+            // "Enable dynamic overhang speeds" must be explicitly enabled; a nil value is
+            // treated as disabled, so the four overhang speed fields stay grayed out until
+            // both the master Speed override is active and dynamic overhang speeds are on.
+            const bool dynamic_overhang_speeds = any_override &&
+                !m_config->option("filament_enable_dynamic_overhang_speeds")->is_nil() &&
+                m_config->opt_bool("filament_enable_dynamic_overhang_speeds", extruder_idx);
+
+            const std::set<std::string> overhang_speed_keys = {
+                "filament_overhang_speed_0", "filament_overhang_speed_1",
+                "filament_overhang_speed_2", "filament_overhang_speed_3" };
+
+            const DynamicPrintConfig& print_config = m_preset_bundle->prints.get_edited_preset().config;
+
+            for (const std::string& opt_key : keys) {
+                if (Field* field = (*optgroup)->get_fieldc(opt_key, extruder_idx); field != nullptr) {
+                    bool enable = any_override;
+                    if (overhang_speed_keys.count(opt_key))
+                        enable = dynamic_overhang_speeds;
+                    field->toggle(enable);
+
+                    // When a speed override is disabled, show the effective value from the
+                    // corresponding Print Settings -> Speed tab option. Use set_value_for_display
+                    // so the user's last meaningful value is preserved for when the override is re-enabled.
+                    // Only show the fallback when the config value is actually nil (override fully off);
+                    // when the field is just greyed out by a sub-toggle (e.g. dynamic overhang speeds off),
+                    // keep showing the user's saved value.
+                    if (!enable && m_config->option(opt_key)->nullable() && m_config->option(opt_key)->is_nil()) {
+                        if (opt_key.compare(0, 9, "filament_") == 0) {
+                            const std::string print_opt_key = opt_key.substr(9);
+                            if (print_config.has(print_opt_key)) {
+                                boost::any fallback_value = (*optgroup)->get_config_value(print_config, print_opt_key, extruder_idx);
+                                if (field->m_opt.type == coBools) {
+                                    bool val = false;
+                                    if (fallback_value.type() == typeid(bool))
+                                        val = boost::any_cast<bool>(fallback_value);
+                                    else if (fallback_value.type() == typeid(unsigned char))
+                                        val = boost::any_cast<unsigned char>(fallback_value) != 0;
+                                    fallback_value = static_cast<unsigned char>(val ? 1 : 0);
+                                }
+                                field->set_value_for_display(fallback_value, false);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
     }
 }
 
@@ -2293,6 +2444,37 @@ void TabFilament::build()
         optgroup->append_single_option_line(option);
         optgroup->append_single_option_line("filament_soluble");
         optgroup->append_single_option_line("filament_abrasive");
+
+        optgroup = page->new_optgroup(L("Extrusion width"));
+        optgroup->append_single_option_line("filament_extrusion_width");
+        optgroup->append_single_option_line("filament_first_layer_extrusion_width");
+        optgroup->append_single_option_line("filament_perimeter_extrusion_width");
+        optgroup->append_single_option_line("filament_external_perimeter_extrusion_width");
+        optgroup->append_single_option_line("filament_infill_extrusion_width");
+        optgroup->append_single_option_line("filament_solid_infill_extrusion_width");
+        optgroup->append_single_option_line("filament_top_infill_extrusion_width");
+        optgroup->append_single_option_line("filament_support_material_extrusion_width");
+        optgroup->append_single_option_line("filament_automatic_extrusion_widths");
+
+        optgroup = page->new_optgroup(L("Overlap"));
+        optgroup->append_single_option_line("filament_infill_overlap");
+
+        optgroup = page->new_optgroup(L("Flow"));
+        optgroup->append_single_option_line("filament_bridge_flow_ratio");
+
+        optgroup = page->new_optgroup(L("Slicing"));
+        optgroup->append_single_option_line("filament_slice_closing_radius");
+        optgroup->append_single_option_line("filament_resolution");
+        optgroup->append_single_option_line("filament_gcode_resolution");
+        optgroup->append_single_option_line("filament_xy_size_compensation");
+
+        optgroup = page->new_optgroup(L("Arachne perimeter generator"));
+        optgroup->append_single_option_line("filament_wall_transition_angle");
+        optgroup->append_single_option_line("filament_wall_transition_filter_deviation");
+        optgroup->append_single_option_line("filament_wall_transition_length");
+        optgroup->append_single_option_line("filament_wall_distribution_count");
+        optgroup->append_single_option_line("filament_min_bead_width");
+        optgroup->append_single_option_line("filament_min_feature_size");
 
         optgroup = page->new_optgroup(L("Print speed override"));
         optgroup->append_single_option_line("filament_max_volumetric_speed", "max-volumetric-speed_127176");

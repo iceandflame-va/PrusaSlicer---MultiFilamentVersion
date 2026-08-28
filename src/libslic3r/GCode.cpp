@@ -713,7 +713,10 @@ namespace DoExport {
         processor.enable_stealth_time_estimator(silent_time_estimator_enabled);
     }
 
-	static double autospeed_volumetric_limit(const Print &print)
+	// Returns { volumetric_speed, min_mm3_per_mm } where min_mm3_per_mm is the smallest cross-section
+	// used in the print (the base of the autospeed calculation). The base is returned so that the
+	// per-filament max_print_speed override can recompute the volumetric autospeed per active extruder.
+	static std::pair<double, double> autospeed_volumetric_limit(const Print &print)
 	{
 	    // get the minimum cross-section used in the print
 	    std::vector<double> mm3_per_mm;
@@ -756,18 +759,20 @@ namespace DoExport {
 	    // filter out 0-width segments
 	    mm3_per_mm.erase(std::remove_if(mm3_per_mm.begin(), mm3_per_mm.end(), [](double v) { return v < 0.000001; }), mm3_per_mm.end());
 	    double volumetric_speed = 0.;
+	    double min_mm3_per_mm   = 0.;
 	    if (! mm3_per_mm.empty()) {
 	        // In order to honor max_print_speed we need to find a target volumetric
 	        // speed that we can use throughout the print. So we define this target 
 	        // volumetric speed as the volumetric speed produced by printing the 
 	        // smallest cross-section at the maximum speed: any larger cross-section
 	        // will need slower feedrates.
-	        volumetric_speed = *std::min_element(mm3_per_mm.begin(), mm3_per_mm.end()) * print.config().max_print_speed.value;
+	        min_mm3_per_mm = *std::min_element(mm3_per_mm.begin(), mm3_per_mm.end());
+	        volumetric_speed = min_mm3_per_mm * print.config().max_print_speed.value;
 	        // limit such volumetric speed with max_volumetric_speed if set
 	        if (print.config().max_volumetric_speed.value > 0)
 	            volumetric_speed = std::min(volumetric_speed, print.config().max_volumetric_speed.value);
 	    }
-	    return volumetric_speed;
+	    return { volumetric_speed, min_mm3_per_mm };
 	}
 
 
@@ -1049,7 +1054,9 @@ void GCodeGenerator::_do_export(Print& print, GCodeOutputStream &file, Thumbnail
     m_enable_cooling_markers = true;
     this->apply_print_config(print.config());
 
-    m_volumetric_speed = DoExport::autospeed_volumetric_limit(print);
+    const std::pair<double, double> autospeed_limit = DoExport::autospeed_volumetric_limit(print);
+    m_volumetric_speed           = autospeed_limit.first;
+    m_autospeed_min_mm3_per_mm   = autospeed_limit.second;
     print.throw_if_canceled();
 
     if (print.config().spiral_vase.value)
@@ -3191,8 +3198,19 @@ std::string GCodeGenerator::extrude_perimeters(
     for (const GCode::ExtrusionOrder::Perimeter &perimeter : perimeters) {
         double speed{-1};
         // Apply the small perimeter speed.
-        if (perimeter.extrusion_entity->length() <= SMALL_PERIMETER_LENGTH)
+        if (perimeter.extrusion_entity->length() <= SMALL_PERIMETER_LENGTH) {
             speed = m_config.small_perimeter_speed.get_abs_value(m_config.perimeter_speed);
+            // Apply the per-filament small perimeter speed override if set.
+            const unsigned int extruder_id = m_writer.extruder()->id();
+            if (!m_config.filament_small_perimeter_speed.is_nil(extruder_id)) {
+                const double base =
+                    m_config.filament_perimeter_speed.is_nil(extruder_id) || m_config.filament_perimeter_speed.get_at(extruder_id) <= 0 ?
+                    m_config.perimeter_speed.value : m_config.filament_perimeter_speed.get_at(extruder_id);
+                if (const double filament_speed = m_config.filament_small_perimeter_speed.get_at(extruder_id).get_abs_value(base);
+                    filament_speed > 0)
+                    speed = filament_speed;
+            }
+        }
         gcode += this->extrude_smooth_path(perimeter.smooth_path, perimeter.extrusion_entity->is_loop(), comment_perimeter, speed, perimeter.wipe_offset);
         this->m_travel_obstacle_tracker.mark_extruded(
             perimeter.extrusion_entity, print_instance.object_layer_to_print_id, print_instance.instance_id
@@ -3230,8 +3248,17 @@ std::string GCodeGenerator::extrude_support(const std::vector<GCode::ExtrusionOr
 
     std::string gcode;
     if (! support_extrusions.empty()) {
-        const double  support_speed            = m_config.support_material_speed.value;
-        const double  support_interface_speed  = m_config.support_material_interface_speed.get_abs_value(support_speed);
+        // Apply the per-filament support speed overrides if set.
+        const unsigned int extruder_id         = m_writer.extruder()->id();
+        double        support_speed            = m_config.support_material_speed.value;
+        if (!m_config.filament_support_material_speed.is_nil(extruder_id) &&
+            m_config.filament_support_material_speed.get_at(extruder_id) > 0)
+            support_speed = m_config.filament_support_material_speed.get_at(extruder_id);
+        double        support_interface_speed  = m_config.support_material_interface_speed.get_abs_value(support_speed);
+        if (!m_config.filament_support_material_interface_speed.is_nil(extruder_id)) {
+            if (const double v = m_config.filament_support_material_interface_speed.get_at(extruder_id).get_abs_value(support_speed); v > 0)
+                support_interface_speed = v;
+        }
         for (const GCode::ExtrusionOrder::SupportPath &path : support_extrusions) {
             const auto   label = path.is_interface ?  support_interface_label : support_label;
             const double speed = path.is_interface ? support_interface_speed : support_speed;
@@ -3349,6 +3376,97 @@ std::string GCodeGenerator::travel_to_first_position(const Vec3crd& point, const
 
     this->m_moved_to_first_layer_point = true;
     return gcode;
+}
+
+// Apply the per-filament speed overrides (set in the Filament Overrides tab) to the extrusion speed.
+// Returns the speed defined by the filament profile for the given extrusion role if an override is set
+// (not nil) for the active extruder and resolves to a positive value, otherwise returns the input speed.
+// Percentage values are resolved over the same base as the respective print options, taking the
+// filament overrides of the parent settings into account.
+double apply_filament_speed_override(
+    double speed, const FullPrintConfig &config, int extruder_id, const ExtrusionRole role
+) {
+    const size_t id = size_t(extruder_id);
+
+    auto resolve = [id](const ConfigOptionFloatsOrPercentsNullable &opt, double base) {
+        return opt.get_at(id).get_abs_value(base);
+    };
+    // Effective value of a speed setting: filament override if set, otherwise the print profile value.
+    auto effective = [id](const ConfigOptionFloatsNullable &filament_opt, double print_value) {
+        return !filament_opt.is_nil(id) && filament_opt.get_at(id) > 0 ? filament_opt.get_at(id) : print_value;
+    };
+
+    const double perimeter_speed = effective(config.filament_perimeter_speed, config.perimeter_speed.value);
+    const double infill_speed    = effective(config.filament_infill_speed, config.infill_speed.value);
+    const double support_speed   = effective(config.filament_support_material_speed, config.support_material_speed.value);
+    double       solid_infill_speed = config.get_abs_value("solid_infill_speed");
+    if (!config.filament_solid_infill_speed.is_nil(id)) {
+        if (const double v = resolve(config.filament_solid_infill_speed, infill_speed); v > 0)
+            solid_infill_speed = v;
+    }
+
+    double override_speed = 0.;
+    if (role == ExtrusionRole::Perimeter) {
+        if (!config.filament_perimeter_speed.is_nil(id))
+            override_speed = config.filament_perimeter_speed.get_at(id);
+    } else if (role == ExtrusionRole::ExternalPerimeter) {
+        if (!config.filament_external_perimeter_speed.is_nil(id))
+            override_speed = resolve(config.filament_external_perimeter_speed, perimeter_speed);
+    } else if (role.is_bridge()) {
+        assert(role.is_perimeter() || role == ExtrusionRole::BridgeInfill);
+        if (!config.filament_bridge_speed.is_nil(id))
+            override_speed = config.filament_bridge_speed.get_at(id);
+    } else if (role == ExtrusionRole::InternalInfill) {
+        if (!config.filament_infill_speed.is_nil(id))
+            override_speed = config.filament_infill_speed.get_at(id);
+    } else if (role == ExtrusionRole::SolidInfill) {
+        if (!config.filament_solid_infill_speed.is_nil(id))
+            override_speed = resolve(config.filament_solid_infill_speed, infill_speed);
+    } else if (role == ExtrusionRole::InfillOverBridge) {
+        if (!config.filament_over_bridge_speed.is_nil(id)) {
+            override_speed = resolve(config.filament_over_bridge_speed, solid_infill_speed);
+            if (override_speed <= 0)
+                // Mirror the print option semantics: zero means "use solid infill speed".
+                override_speed = solid_infill_speed;
+        }
+    } else if (role == ExtrusionRole::TopSolidInfill) {
+        if (!config.filament_top_solid_infill_speed.is_nil(id))
+            override_speed = resolve(config.filament_top_solid_infill_speed, solid_infill_speed);
+    } else if (role == ExtrusionRole::Ironing) {
+        if (!config.filament_ironing_speed.is_nil(id))
+            override_speed = config.filament_ironing_speed.get_at(id);
+    } else if (role == ExtrusionRole::GapFill) {
+        if (!config.filament_gap_fill_speed.is_nil(id))
+            override_speed = config.filament_gap_fill_speed.get_at(id);
+    } else if (role == ExtrusionRole::SupportMaterialInterface) {
+        if (!config.filament_support_material_interface_speed.is_nil(id))
+            override_speed = resolve(config.filament_support_material_interface_speed, support_speed);
+    } else if (role.is_support()) {
+        if (!config.filament_support_material_speed.is_nil(id))
+            override_speed = config.filament_support_material_speed.get_at(id);
+    }
+
+    return override_speed > 0 ? override_speed : speed;
+}
+
+// Returns the volumetric autospeed limit to use for the active extruder, honoring the per-filament
+// max_print_speed override (set in the Filament Overrides tab). When no override is set for the
+// active extruder, the print-wide default_volumetric_speed is returned unchanged.
+double apply_filament_max_print_speed(
+    double default_volumetric_speed, double min_mm3_per_mm, const FullPrintConfig &config, int extruder_id
+) {
+    // No autospeed cross-section base means autospeed is not used; nothing to override.
+    if (min_mm3_per_mm <= 0.)
+        return default_volumetric_speed;
+    if (config.filament_max_print_speed.is_nil(extruder_id))
+        return default_volumetric_speed;
+    const double filament_max_print_speed = config.filament_max_print_speed.get_at(extruder_id);
+    if (filament_max_print_speed <= 0.)
+        return default_volumetric_speed;
+    double volumetric_speed = min_mm3_per_mm * filament_max_print_speed;
+    if (config.max_volumetric_speed.value > 0)
+        volumetric_speed = std::min(volumetric_speed, config.max_volumetric_speed.value);
+    return volumetric_speed;
 }
 
 double cap_speed(
@@ -3484,27 +3602,42 @@ std::string GCodeGenerator::_extrude(
         } else {
             throw Slic3r::InvalidArgument("Invalid speed");
         }
+        // Apply the per-filament speed overrides of the print move speeds.
+        speed = apply_filament_speed_override(speed, m_config, m_writer.extruder()->id(), path_attr.role);
     }
-    if (m_volumetric_speed != 0. && speed == 0)
-        speed = m_volumetric_speed / path_attr.mm3_per_mm;
+    const int extruder_id = m_writer.extruder()->id();
+    if (m_volumetric_speed != 0. && speed == 0) {
+        // Apply the per-filament max_print_speed override to the volumetric autospeed limit.
+        const double volumetric_speed = apply_filament_max_print_speed(m_volumetric_speed, m_autospeed_min_mm3_per_mm, m_config, extruder_id);
+        speed = volumetric_speed / path_attr.mm3_per_mm;
+    }
+    // Resolve a first-layer / over-raft modifier speed, honoring the per-filament override if set.
+    auto first_layer_modifier_speed = [this, extruder_id, speed](const char *print_key, const ConfigOptionFloatsOrPercentsNullable &filament_opt) {
+        if (!filament_opt.is_nil(extruder_id))
+            return filament_opt.get_at(extruder_id).get_abs_value(speed);
+        return m_config.get_abs_value(print_key, speed);
+    };
     if (this->on_first_layer()) {
-        const double first_layer_infill_speed{m_config.get_abs_value("first_layer_infill_speed", speed)};
+        const double first_layer_infill_speed{first_layer_modifier_speed("first_layer_infill_speed", m_config.filament_first_layer_infill_speed)};
         if (path_attr.role == ExtrusionRole::SolidInfill && first_layer_infill_speed > 0) {
             speed = first_layer_infill_speed;
         } else {
-            speed = m_config.get_abs_value("first_layer_speed", speed);
+            speed = first_layer_modifier_speed("first_layer_speed", m_config.filament_first_layer_speed);
         }
     }
     else if (this->object_layer_over_raft())
-        speed = m_config.get_abs_value("first_layer_speed_over_raft", speed);
+        speed = first_layer_modifier_speed("first_layer_speed_over_raft", m_config.filament_first_layer_speed_over_raft);
 
     ExtrusionProcessor::OverhangSpeeds dynamic_print_and_fan_speeds = {-1.f, -1.f};
     if (path_attr.overhang_attributes.has_value()) {
         double external_perimeter_reference_speed = m_config.get_abs_value("external_perimeter_speed");
         if (external_perimeter_reference_speed == 0) {
-            external_perimeter_reference_speed = m_volumetric_speed / path_attr.mm3_per_mm;
+            const double volumetric_speed = apply_filament_max_print_speed(m_volumetric_speed, m_autospeed_min_mm3_per_mm, m_config, extruder_id);
+            external_perimeter_reference_speed = volumetric_speed / path_attr.mm3_per_mm;
         }
 
+        // Apply the per-filament external perimeter speed override to the reference speed of the overhang speeds.
+        external_perimeter_reference_speed = apply_filament_speed_override(external_perimeter_reference_speed, m_config, m_writer.extruder()->id(), ExtrusionRole::ExternalPerimeter);
         external_perimeter_reference_speed = cap_speed(external_perimeter_reference_speed, m_config, m_writer.extruder()->id(), path_attr);
         dynamic_print_and_fan_speeds       = ExtrusionProcessor::calculate_overhang_speed(path_attr, this->m_config, m_writer.extruder()->id(),
                                                                                     float(external_perimeter_reference_speed), float(speed),

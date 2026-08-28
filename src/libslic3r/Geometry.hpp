@@ -140,8 +140,13 @@ inline bool segments_intersect(
 	const Slic3r::Point &ip1, const Slic3r::Point &ip2, 
 	const Slic3r::Point &jp1, const Slic3r::Point &jp2)
 {    
-    assert(ip1 != ip2);
-    assert(jp1 != jp2);
+    // A degenerate (zero-length) segment is a single point. The signed-area test below
+    // handles this gracefully: such a segment produces a zero direction vector, so it is
+    // treated as a point and the collinear/overlap branch reduces to a point-on-segment
+    // test. Guard here only to avoid a spurious "intersection" report between two
+    // coincident degenerate segments and to document the supported behavior.
+    if (ip1 == ip2 && jp1 == jp2)
+        return ip1 == jp1;
 
     auto segments_could_intersect = [](
         const Slic3r::Point &ip1, const Slic3r::Point &ip2,

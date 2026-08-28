@@ -332,6 +332,10 @@ public:
     // The extruder retract keys could be overidden by the same values defined at the Filament level
     // (then the key is further prefixed with the "filament_" prefix).
     const std::vector<std::string>& extruder_retract_keys() const { return m_extruder_retract_keys; }
+    // Print config keys that can be overridden by per-filament Advanced settings.
+    // The filament override is stored as a nullable vector option prefixed with "filament_".
+    // These keys are sorted lexicographically.
+    const std::vector<std::string>& advanced_override_keys() const { return m_advanced_override_keys; }
 
 private:
     void init_common_params();
@@ -343,6 +347,7 @@ private:
 
     std::vector<std::string>    m_extruder_option_keys;
     std::vector<std::string>    m_extruder_retract_keys;
+    std::vector<std::string>    m_advanced_override_keys;
 };
 
 // The one and only global definition of SLic3r configuration options.
@@ -888,6 +893,58 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloats,              filament_stamping_loading_speed))
     ((ConfigOptionFloats,              filament_stamping_distance))
     ((ConfigOptionFloatsOrPercentsNullable, filament_seam_gap_distance))
+    // Per-filament overrides of the print move speeds (see "Speed for print moves" in Print Settings).
+    ((ConfigOptionFloatsNullable,      filament_perimeter_speed))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_small_perimeter_speed))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_external_perimeter_speed))
+    ((ConfigOptionFloatsNullable,      filament_infill_speed))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_solid_infill_speed))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_top_solid_infill_speed))
+    ((ConfigOptionFloatsNullable,      filament_support_material_speed))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_support_material_interface_speed))
+    ((ConfigOptionFloatsNullable,      filament_bridge_speed))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_over_bridge_speed))
+    ((ConfigOptionFloatsNullable,      filament_gap_fill_speed))
+    ((ConfigOptionFloatsNullable,      filament_ironing_speed))
+    // Per-filament overrides of the dynamic overhang speeds.
+    ((ConfigOptionBoolsNullable,       filament_enable_dynamic_overhang_speeds))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_overhang_speed_0))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_overhang_speed_1))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_overhang_speed_2))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_overhang_speed_3))
+    // Per-filament overrides of the modifier speeds (see "Modifiers" in Print Settings).
+    ((ConfigOptionFloatsOrPercentsNullable, filament_first_layer_speed))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_first_layer_infill_speed))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_first_layer_speed_over_raft))
+    // Per-filament override of the autospeed max print speed (see "Autospeed" in Print Settings).
+    ((ConfigOptionFloatsNullable,      filament_max_print_speed))
+    // Per-filament overrides of the Advanced print settings (see "Advanced" in Print Settings).
+    // Extrusion width
+    ((ConfigOptionFloatsOrPercentsNullable, filament_extrusion_width))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_first_layer_extrusion_width))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_perimeter_extrusion_width))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_external_perimeter_extrusion_width))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_infill_extrusion_width))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_solid_infill_extrusion_width))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_top_infill_extrusion_width))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_support_material_extrusion_width))
+    ((ConfigOptionBoolsNullable,           filament_automatic_extrusion_widths))
+    // Overlap
+    ((ConfigOptionFloatsOrPercentsNullable, filament_infill_overlap))
+    // Flow
+    ((ConfigOptionFloatsNullable,      filament_bridge_flow_ratio))
+    // Slicing
+    ((ConfigOptionFloatsNullable,      filament_slice_closing_radius))
+    ((ConfigOptionFloatsNullable,      filament_resolution))
+    ((ConfigOptionFloatsNullable,      filament_gcode_resolution))
+    ((ConfigOptionFloatsNullable,      filament_xy_size_compensation))
+    // Arachne perimeter generator
+    ((ConfigOptionFloatsNullable,      filament_wall_transition_angle))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_wall_transition_filter_deviation))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_wall_transition_length))
+    ((ConfigOptionIntsNullable,        filament_wall_distribution_count))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_min_bead_width))
+    ((ConfigOptionFloatsOrPercentsNullable, filament_min_feature_size))
     ((ConfigOptionPercents,            filament_shrinkage_compensation_xy))
     ((ConfigOptionPercents,            filament_shrinkage_compensation_z))
     ((ConfigOptionFloats,              filament_flush_volume))

@@ -43,7 +43,7 @@ Open the MSVC x64 Native Tools Command Prompt and run the following:
 cd c:\src\PrusaSlicer\
 mkdir build
 cd build
-cmake .. -DCMAKE_PREFIX_PATH="c:\src\PrusaSlicer\deps\build\destdir\usr\local"
+cmake .. -DCMAKE_PREFIX_PATH="D:\Cprojects\prusha\deps\build\destdir\usr\local"
 ```
 
 Note that `CMAKE_PREFIX_PATH` must be absolute path. A relative path will not work.

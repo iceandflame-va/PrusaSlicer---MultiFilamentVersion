@@ -218,6 +218,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
                opt_key == "first_layer_height"
             || opt_key == "nozzle_diameter"
             || opt_key == "resolution"
+            || opt_key == "filament_resolution"
             // Spiral Vase forces different kind of slicing than the normal model:
             // In Spiral Vase mode, holes are closed and only the largest area contour is kept at each layer.
             // Therefore toggling the Spiral Vase on / off requires complete reslicing.
@@ -285,16 +286,45 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             osteps.emplace_back(posSupportMaterial);
         } else if (
                opt_key == "first_layer_extrusion_width" 
+            || opt_key == "filament_first_layer_extrusion_width"
             || opt_key == "min_layer_height"
             || opt_key == "max_layer_height"
-            || opt_key == "gcode_resolution") {
+            || opt_key == "gcode_resolution"
+            || opt_key == "filament_gcode_resolution") {
             osteps.emplace_back(posPerimeters);
             osteps.emplace_back(posInfill);
             osteps.emplace_back(posSupportMaterial);
             steps.emplace_back(psSkirtBrim);
         } else if (opt_key == "avoid_crossing_curled_overhangs") {
             osteps.emplace_back(posEstimateCurledExtrusions);
-        } else if (opt_key == "automatic_extrusion_widths") {
+        } else if (opt_key == "filament_enable_dynamic_overhang_speeds") {
+            // Per-filament dynamic overhang speeds influence the splitting of overhanging extrusions.
+            osteps.emplace_back(posEstimateCurledExtrusions);
+            osteps.emplace_back(posCalculateOverhangingPerimeters);
+        } else if (
+               opt_key == "filament_perimeter_speed"
+            || opt_key == "filament_small_perimeter_speed"
+            || opt_key == "filament_external_perimeter_speed"
+            || opt_key == "filament_infill_speed"
+            || opt_key == "filament_solid_infill_speed"
+            || opt_key == "filament_top_solid_infill_speed"
+            || opt_key == "filament_support_material_speed"
+            || opt_key == "filament_support_material_interface_speed"
+            || opt_key == "filament_bridge_speed"
+            || opt_key == "filament_over_bridge_speed"
+            || opt_key == "filament_gap_fill_speed"
+            || opt_key == "filament_ironing_speed"
+            || opt_key == "filament_overhang_speed_0"
+            || opt_key == "filament_overhang_speed_1"
+            || opt_key == "filament_overhang_speed_2"
+            || opt_key == "filament_overhang_speed_3"
+            || opt_key == "filament_first_layer_speed"
+            || opt_key == "filament_first_layer_infill_speed"
+            || opt_key == "filament_first_layer_speed_over_raft"
+            || opt_key == "filament_max_print_speed") {
+            // Per-filament speed overrides are only applied during the G-code export.
+            steps.emplace_back(psGCodeExport);
+        } else if (opt_key == "automatic_extrusion_widths" || opt_key == "filament_automatic_extrusion_widths") {
             osteps.emplace_back(posPerimeters);
         } else if (opt_key == "toolchange_ordering") {
             steps.emplace_back(psWipeTower);

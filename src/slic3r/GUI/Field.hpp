@@ -275,6 +275,15 @@ public:
 	static int def_width_wider()	;
 	static int def_width_thinner()	;
 
+    // Set a value for display purposes (e.g. fallback from print config) without
+    // overwriting m_last_meaningful_value, so toggling override checkboxes preserves
+    // the user's previously entered values.
+    void set_value_for_display(const boost::any& value, bool change_event = false) {
+        boost::any saved = m_last_meaningful_value;
+        set_value(value, change_event);
+        m_last_meaningful_value = saved;
+    }
+
 protected:
 	// current value
 	boost::any			m_value;

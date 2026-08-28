@@ -4079,10 +4079,43 @@ void PrintConfigDef::init_fff_params()
         }
     }
 
+    // Declare print speed values for filament profile, overriding the print profile values.
+    // Unlike the retract values above, these are scalar print options, which are turned into per-extruder vectors.
+    for (const char *opt_key : {
+        // floats
+        "perimeter_speed", "infill_speed", "support_material_speed", "bridge_speed", "gap_fill_speed", "ironing_speed",
+        "max_print_speed",
+        // bools
+        "enable_dynamic_overhang_speeds"}) {
+        auto it_opt = options.find(opt_key);
+        assert(it_opt != options.end());
+        switch (it_opt->second.type) {
+            case coFloat: def = this->add_nullable(std::string("filament_") + opt_key, coFloats); break;
+            case coBool:  def = this->add_nullable(std::string("filament_") + opt_key, coBools);  break;
+            default: assert(false); continue;
+        }
+        def->label      = it_opt->second.label;
+        def->full_label = it_opt->second.full_label;
+        def->tooltip    = it_opt->second.tooltip;
+        def->sidetext   = it_opt->second.sidetext;
+        def->mode       = it_opt->second.mode;
+        def->ratio_over = it_opt->second.ratio_over;
+        switch (def->type) {
+        case coFloats: def->set_default_value(new ConfigOptionFloatsNullable{static_cast<const ConfigOptionFloat*>(it_opt->second.default_value.get())->value}); break;
+        case coBools:  def->set_default_value(new ConfigOptionBoolsNullable{static_cast<const ConfigOptionBool*>(it_opt->second.default_value.get())->value}); break;
+        default: assert(false);
+        }
+    }
+
     // Declare values for filament profile, overriding printer's profile.
     for (const char *opt_key : {
         // Floats or Percents
-        "seam_gap_distance"}) {
+        "seam_gap_distance",
+        // Speed values, overriding the print profile values (percentages are resolved over the same base as the print options).
+        "small_perimeter_speed", "external_perimeter_speed", "solid_infill_speed", "top_solid_infill_speed",
+        "support_material_interface_speed", "over_bridge_speed",
+        "overhang_speed_0", "overhang_speed_1", "overhang_speed_2", "overhang_speed_3",
+        "first_layer_speed", "first_layer_infill_speed", "first_layer_speed_over_raft"}) {
 
         auto it_opt = options.find(opt_key);
         assert(it_opt != options.end());
@@ -4103,6 +4136,7 @@ void PrintConfigDef::init_fff_params()
         def->tooltip    = it_opt->second.tooltip;
         def->sidetext   = it_opt->second.sidetext;
         def->mode       = it_opt->second.mode;
+        def->ratio_over = it_opt->second.ratio_over;
 
         switch (def->type) {
             case coFloatsOrPercents: {
@@ -4114,6 +4148,63 @@ void PrintConfigDef::init_fff_params()
                 assert(false);
                 break;
             }
+        }
+    }
+
+    // Declare filament profile overrides for the Advanced print settings (see "Advanced" in Print Settings).
+    // These are scalar print options turned into per-extruder nullable vectors.
+    // The list of keys must match m_advanced_override_keys initialized in init_extruder_option_keys().
+    for (const char *opt_key : {
+        // Floats
+        "bridge_flow_ratio", "resolution", "gcode_resolution",
+        "slice_closing_radius", "xy_size_compensation", "wall_transition_angle",
+        // FloatsOrPercents
+        "extrusion_width", "first_layer_extrusion_width", "perimeter_extrusion_width",
+        "external_perimeter_extrusion_width", "infill_extrusion_width", "solid_infill_extrusion_width",
+        "top_infill_extrusion_width", "support_material_extrusion_width", "infill_overlap",
+        "wall_transition_filter_deviation", "wall_transition_length", "min_bead_width", "min_feature_size",
+        // Bools
+        "automatic_extrusion_widths",
+        // Ints
+        "wall_distribution_count"
+    }) {
+        auto it_opt = options.find(opt_key);
+        assert(it_opt != options.end());
+        switch (it_opt->second.type) {
+            case coFloat:          def = this->add_nullable(std::string("filament_") + opt_key, coFloats); break;
+            case coBool:           def = this->add_nullable(std::string("filament_") + opt_key, coBools);  break;
+            case coInt:            def = this->add_nullable(std::string("filament_") + opt_key, coInts);   break;
+            case coFloatOrPercent: def = this->add_nullable(std::string("filament_") + opt_key, coFloatsOrPercents); break;
+            default: assert(false); continue;
+        }
+        def->label      = it_opt->second.label;
+        def->full_label = it_opt->second.full_label;
+        def->tooltip    = it_opt->second.tooltip;
+        def->sidetext   = it_opt->second.sidetext;
+        def->mode       = it_opt->second.mode;
+        def->ratio_over = it_opt->second.ratio_over;
+        switch (def->type) {
+        case coFloats: {
+            const auto *dv = static_cast<const ConfigOptionFloat*>(it_opt->second.default_value.get());
+            def->set_default_value(new ConfigOptionFloatsNullable{dv->value});
+            break;
+        }
+        case coBools: {
+            const auto *dv = static_cast<const ConfigOptionBool*>(it_opt->second.default_value.get());
+            def->set_default_value(new ConfigOptionBoolsNullable{dv->value});
+            break;
+        }
+        case coInts: {
+            const auto *dv = static_cast<const ConfigOptionInt*>(it_opt->second.default_value.get());
+            def->set_default_value(new ConfigOptionIntsNullable{dv->value});
+            break;
+        }
+        case coFloatsOrPercents: {
+            const auto *dv = static_cast<const ConfigOptionFloatOrPercent*>(it_opt->second.default_value.get());
+            def->set_default_value(new ConfigOptionFloatsOrPercentsNullable{{dv->value, dv->percent}});
+            break;
+        }
+        default: assert(false); break;
         }
     }
 }
@@ -4150,6 +4241,31 @@ void PrintConfigDef::init_extruder_option_keys()
         "wipe"
     };
     assert(std::is_sorted(m_extruder_retract_keys.begin(), m_extruder_retract_keys.end()));
+
+    m_advanced_override_keys = {
+        "automatic_extrusion_widths",
+        "bridge_flow_ratio",
+        "external_perimeter_extrusion_width",
+        "extrusion_width",
+        "first_layer_extrusion_width",
+        "gcode_resolution",
+        "infill_extrusion_width",
+        "infill_overlap",
+        "min_bead_width",
+        "min_feature_size",
+        "perimeter_extrusion_width",
+        "resolution",
+        "slice_closing_radius",
+        "solid_infill_extrusion_width",
+        "support_material_extrusion_width",
+        "top_infill_extrusion_width",
+        "wall_distribution_count",
+        "wall_transition_angle",
+        "wall_transition_filter_deviation",
+        "wall_transition_length",
+        "xy_size_compensation"
+    };
+    assert(std::is_sorted(m_advanced_override_keys.begin(), m_advanced_override_keys.end()));
 }
 
 void PrintConfigDef::init_sla_support_params(const std::string &prefix)

@@ -174,6 +174,7 @@ ExtrusionEntityCollection calculate_and_split_overhanging_extrusions(const Extru
 
 static std::map<float, float> calc_print_speed_sections(const ExtrusionAttributes &attributes,
                                                         const FullPrintConfig     &config,
+                                                        const size_t               extruder_id,
                                                         const float                external_perimeter_reference_speed,
                                                         const float                default_speed)
 {
@@ -183,8 +184,25 @@ static std::map<float, float> calc_print_speed_sections(const ExtrusionAttribute
         ConfigOptionFloatOrPercent print_speed;
     };
 
+    // Per-filament override of the dynamic overhang speeds (set in the Filament Overrides tab).
+    // A nil speed value falls back to the reference speed, mirroring the zero value handling below.
+    auto filament_overhang_speed = [&config, extruder_id](const ConfigOptionFloatsOrPercentsNullable &opt) {
+        if (opt.is_nil(extruder_id))
+            return ConfigOptionFloatOrPercent{0., false};
+        const FloatOrPercent v = opt.get_at(extruder_id);
+        return ConfigOptionFloatOrPercent{v.value, v.percent};
+    };
+    const bool filament_dynamic_speeds_enabled = !config.filament_enable_dynamic_overhang_speeds.is_nil(extruder_id) &&
+                                                 config.filament_enable_dynamic_overhang_speeds.get_at(extruder_id);
+
     std::vector<OverhangWithSpeed> overhangs_with_speeds = {{100, ConfigOptionFloatOrPercent{default_speed, false}}};
-    if (config.enable_dynamic_overhang_speeds) {
+    if (filament_dynamic_speeds_enabled) {
+        overhangs_with_speeds = {{  0, filament_overhang_speed(config.filament_overhang_speed_0)},
+                                 { 25, filament_overhang_speed(config.filament_overhang_speed_1)},
+                                 { 50, filament_overhang_speed(config.filament_overhang_speed_2)},
+                                 { 75, filament_overhang_speed(config.filament_overhang_speed_3)},
+                                 {100, ConfigOptionFloatOrPercent{default_speed, false}}};
+    } else if (config.enable_dynamic_overhang_speeds) {
         overhangs_with_speeds = {{  0, config.overhang_speed_0},
                                  { 25, config.overhang_speed_1},
                                  { 50, config.overhang_speed_2},
@@ -259,7 +277,7 @@ OverhangSpeeds calculate_overhang_speed(const ExtrusionAttributes  &attributes,
         return (1.0f - t) * lower_dist->second + t * upper_dist->second;
     };
 
-    const std::map<float, float> speed_sections     = calc_print_speed_sections(attributes, config, external_perimeter_reference_speed, default_speed);
+    const std::map<float, float> speed_sections     = calc_print_speed_sections(attributes, config, extruder_id, external_perimeter_reference_speed, default_speed);
     const std::map<float, float> fan_speed_sections = calc_fan_speed_sections(attributes, config, extruder_id);
 
     const float extrusion_speed   = std::min(interpolate_speed(speed_sections, attributes.overhang_attributes->start_distance_from_prev_layer),
@@ -270,7 +288,9 @@ OverhangSpeeds calculate_overhang_speed(const ExtrusionAttributes  &attributes,
                                              interpolate_speed(fan_speed_sections, attributes.overhang_attributes->end_distance_from_prev_layer));
 
     OverhangSpeeds overhang_speeds = {std::min(curled_base_speed, extrusion_speed), fan_speed};
-    if (!config.enable_dynamic_overhang_speeds) {
+    const bool filament_dynamic_speeds_enabled = !config.filament_enable_dynamic_overhang_speeds.is_nil(extruder_id) &&
+                                                 config.filament_enable_dynamic_overhang_speeds.get_at(extruder_id);
+    if (!config.enable_dynamic_overhang_speeds && !filament_dynamic_speeds_enabled) {
         overhang_speeds.print_speed = -1;
     }
 

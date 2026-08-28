@@ -530,6 +530,19 @@ static std::vector<std::string> s_Preset_filament_options {
     "filament_retract_length", "filament_retract_lift", "filament_retract_lift_above", "filament_retract_lift_below", "filament_retract_speed", "filament_deretract_speed", "filament_retract_restart_extra", "filament_retract_before_travel",
     "filament_retract_layer_change", "filament_wipe", "filament_retract_before_wipe", "filament_retract_length_toolchange", "filament_retract_restart_extra_toolchange", "filament_travel_ramping_lift",
     "filament_travel_slope", "filament_travel_max_lift", "filament_travel_lift_before_obstacle",
+    // Speed overrides
+    "filament_perimeter_speed", "filament_small_perimeter_speed", "filament_external_perimeter_speed", "filament_infill_speed",
+    "filament_solid_infill_speed", "filament_top_solid_infill_speed", "filament_support_material_speed", "filament_support_material_interface_speed",
+    "filament_bridge_speed", "filament_over_bridge_speed", "filament_gap_fill_speed", "filament_ironing_speed",
+    "filament_enable_dynamic_overhang_speeds", "filament_overhang_speed_0", "filament_overhang_speed_1", "filament_overhang_speed_2", "filament_overhang_speed_3",
+    "filament_first_layer_speed", "filament_first_layer_infill_speed", "filament_first_layer_speed_over_raft", "filament_max_print_speed",
+    // Advanced overrides
+    "filament_extrusion_width", "filament_first_layer_extrusion_width", "filament_perimeter_extrusion_width", "filament_external_perimeter_extrusion_width",
+    "filament_infill_extrusion_width", "filament_solid_infill_extrusion_width", "filament_top_infill_extrusion_width", "filament_support_material_extrusion_width",
+    "filament_automatic_extrusion_widths", "filament_infill_overlap", "filament_bridge_flow_ratio",
+    "filament_slice_closing_radius", "filament_resolution", "filament_gcode_resolution", "filament_xy_size_compensation",
+    "filament_wall_transition_angle", "filament_wall_transition_filter_deviation", "filament_wall_transition_length", "filament_wall_distribution_count",
+    "filament_min_bead_width", "filament_min_feature_size",
     // Profile compatibility
     "filament_vendor", "compatible_prints", "compatible_prints_condition", "compatible_printers", "compatible_printers_condition", "inherits",
     // Shrinkage compensation

@@ -278,6 +278,96 @@ static t_config_option_keys print_config_diffs(
     return print_diff;
 }
 
+// Apply per-filament overrides of the Advanced print settings (see "Advanced" in Print Settings).
+// The filament overrides are stored as nullable vector options (one value per extruder) prefixed
+// with "filament_", while the corresponding print config options are single-value. This function
+// takes the first non-nil value from each filament override vector and applies it to the print config.
+// Returns the list of print config keys that were changed by the overrides.
+static t_config_option_keys apply_advanced_filament_overrides(
+    const PrintConfig        &current_config,
+    const DynamicPrintConfig &new_full_config,
+    DynamicPrintConfig       &advanced_overrides)
+{
+    const std::vector<std::string> &override_keys = print_config_def.advanced_override_keys();
+    const std::string               filament_prefix = "filament_";
+    t_config_option_keys            changed_keys;
+
+    for (const t_config_option_key &opt_key : override_keys) {
+        const std::string filament_key = filament_prefix + opt_key;
+        const ConfigOption *opt_filament = new_full_config.option(filament_key);
+        if (opt_filament == nullptr || opt_filament->is_nil())
+            continue;
+
+        const ConfigOption *opt_print = new_full_config.option(opt_key);
+        if (opt_print == nullptr)
+            continue;
+
+        // Extract the first non-nil value from the filament override vector and create
+        // a single-value option to apply to the print config.
+        ConfigOption *opt_override = nullptr;
+        switch (opt_print->type()) {
+        case coFloat: {
+            const auto *vec = static_cast<const ConfigOptionFloatsNullable*>(opt_filament);
+            for (size_t i = 0; i < vec->size(); ++i) {
+                if (!vec->is_nil(i)) {
+                    opt_override = new ConfigOptionFloat(vec->get_at(i));
+                    break;
+                }
+            }
+            break;
+        }
+        case coFloatOrPercent: {
+            const auto *vec = static_cast<const ConfigOptionFloatsOrPercentsNullable*>(opt_filament);
+            for (size_t i = 0; i < vec->size(); ++i) {
+                if (!vec->is_nil(i)) {
+                    const FloatOrPercent &v = vec->get_at(i);
+                    opt_override = new ConfigOptionFloatOrPercent(v.value, v.percent);
+                    break;
+                }
+            }
+            break;
+        }
+        case coBool: {
+            const auto *vec = static_cast<const ConfigOptionBoolsNullable*>(opt_filament);
+            for (size_t i = 0; i < vec->size(); ++i) {
+                if (!vec->is_nil(i)) {
+                    opt_override = new ConfigOptionBool(vec->get_at(i) != 0);
+                    break;
+                }
+            }
+            break;
+        }
+        case coInt: {
+            const auto *vec = static_cast<const ConfigOptionIntsNullable*>(opt_filament);
+            for (size_t i = 0; i < vec->size(); ++i) {
+                if (!vec->is_nil(i)) {
+                    opt_override = new ConfigOptionInt(vec->get_at(i));
+                    break;
+                }
+            }
+            break;
+        }
+        default:
+            break;
+        }
+
+        if (opt_override == nullptr)
+            continue;
+
+        // Check if the override actually changes the print config value.
+        const ConfigOption *opt_current = current_config.option(opt_key);
+        if (opt_current != nullptr && *opt_override == *opt_current) {
+            delete opt_override;
+            continue;
+        }
+
+        changed_keys.emplace_back(opt_key);
+        advanced_overrides.set_key_value(opt_key, opt_override);
+    }
+
+    return changed_keys;
+}
+
 // Prepare for storing of the full print config into new_full_config to be exported into the G-code and to be used by the PlaceholderParser.
 static t_config_option_keys full_print_config_diffs(const DynamicPrintConfig &current_full_config, const DynamicPrintConfig &new_full_config)
 {
@@ -1181,6 +1271,13 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
     const VirtualExtruders virtual_extruders      = filter_virtual_extruders_for_physical_count(
         num_physical_extruders, model.virtual_extruders);
 
+    // Apply per-filament overrides of the Advanced print settings (see "Advanced" in Print Settings).
+    // This must happen before print_config_diffs so the overridden values are visible to the diff detection.
+    DynamicPrintConfig   advanced_overrides;
+    t_config_option_keys advanced_diff   = apply_advanced_filament_overrides(m_config, new_full_config, advanced_overrides);
+    if (! advanced_diff.empty())
+        new_full_config.apply_only(advanced_overrides, advanced_diff, true);
+
     // Find modified keys of the various configs. Resolve overrides extruder retract values by filament profiles.
     DynamicPrintConfig   filament_overrides;
     t_config_option_keys print_diff       = print_config_diffs(m_config, new_full_config, filament_overrides);
@@ -1235,6 +1332,8 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
 		// We want the filament overrides to be applied over their respective extruder parameters by the PlaceholderParser.
 		// see "Placeholders do not respect filament overrides." GH issue #3649
 		m_placeholder_parser.apply_config(filament_overrides);
+        if (! advanced_diff.empty())
+            m_placeholder_parser.apply_config(advanced_overrides);
 	    // It is also safe to change m_config now after this->invalidate_state_by_config_options() call.
 	    m_config.apply_only(new_full_config, print_diff, true);
 
@@ -1254,6 +1353,8 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
         // Some filament_overrides may contain values different from new_full_config, but equal to m_config.
         // As long as these config options don't reallocate memory when copying, we are safe overriding a value, which is in use by a worker thread.
 	    m_config.apply(filament_overrides);
+        if (! advanced_diff.empty())
+            m_config.apply(advanced_overrides);
 	    // Handle changes to object config defaults
 	    m_default_object_config.apply_only(new_full_config, object_diff, true);
 	    // Handle changes to regions config defaults

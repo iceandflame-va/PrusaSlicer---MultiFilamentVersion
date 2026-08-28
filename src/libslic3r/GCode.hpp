@@ -435,6 +435,9 @@ private:
     // m_layer is an object layer and it is being printed over raft surface.
     bool                                m_object_layer_over_raft;
     double                              m_volumetric_speed;
+    // Smallest cross-section used in the print (base of the autospeed calculation), kept so that the
+    // per-filament max_print_speed override can recompute the volumetric autospeed per active extruder.
+    double                              m_autospeed_min_mm3_per_mm{ 0. };
     // Support for the extrusion role markers. Which marker is active?
     GCodeExtrusionRole                  m_last_extrusion_role;
     // Support for G-Code Processor

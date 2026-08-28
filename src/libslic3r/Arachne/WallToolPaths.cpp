@@ -630,7 +630,11 @@ void WallToolPaths::stitchToolPaths(std::vector<VariableWidthLines> &toolpaths, 
                 (wall_polygon.junctions.back().p - wall_polygon.junctions.front().p).cast<double>().norm() < stitch_distance) {
                 wall_polygon.junctions.emplace_back(wall_polygon.junctions.front());
             }
-            wall_polygon.is_closed = true;
+            // Only mark the polygon as closed when its endpoints actually coincide.
+            // When the endpoints are farther apart than stitch_distance they are left
+            // unconnected above, so treating such a path as closed would violate the
+            // invariant expected by ThickPolyline::start_at_index() and to_polygon().
+            wall_polygon.is_closed = wall_polygon.junctions.front().p == wall_polygon.junctions.back().p;
             wall_lines.emplace_back(std::move(wall_polygon)); // add stitched polygons to result
         }
 #ifdef DEBUG

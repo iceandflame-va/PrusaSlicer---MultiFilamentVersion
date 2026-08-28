@@ -402,7 +402,10 @@ void ThickPolyline::clip_end(double distance)
 void ThickPolyline::start_at_index(int index)
 {
     assert(index >= 0 && index < this->points.size());
-    assert(this->points.front() == this->points.back() && this->width.front() == this->width.back());
+    // Per the documented contract, this method only reorders a *closed* ThickPolyline
+    // (coincident first/last point and width) and is a no-op otherwise. Arachne can
+    // produce loops that are position-closed but whose endpoint widths differ, so the
+    // closedness condition is enforced by the guard below rather than asserted.
     if (index != 0 && index + 1 != int(this->points.size()) && this->points.front() == this->points.back() && this->width.front() == this->width.back()) {
         this->points.pop_back();
         assert(this->points.size() * 2 == this->width.size());

@@ -539,7 +539,13 @@ void PrintObject::generate_support_material()
 void PrintObject::estimate_curled_extrusions()
 {
     if (this->set_started(posEstimateCurledExtrusions)) {
-        if (this->print()->config().avoid_crossing_curled_overhangs ||
+        const auto &filament_dynamic_overhangs = this->print()->config().filament_enable_dynamic_overhang_speeds;
+        const bool  any_filament_dynamic_overhangs = std::any_of(
+            filament_dynamic_overhangs.values.begin(), filament_dynamic_overhangs.values.end(),
+            [&filament_dynamic_overhangs](const unsigned char v) {
+                return v != filament_dynamic_overhangs.nil_value() && v != 0;
+            });
+        if (this->print()->config().avoid_crossing_curled_overhangs || any_filament_dynamic_overhangs ||
             std::any_of(this->print()->m_print_regions.begin(), this->print()->m_print_regions.end(),
                         [](const PrintRegion *region) { return region->config().enable_dynamic_overhang_speeds.getBool(); })) {
             BOOST_LOG_TRIVIAL(debug) << "Estimating areas with curled extrusions - start";
@@ -575,7 +581,11 @@ void PrintObject::calculate_overhanging_perimeters()
             pr->collect_object_printing_extruders(*this->print(), extruders);
             auto cfg = this->print()->config();
             if (std::any_of(extruders.begin(), extruders.end(),
-                            [&cfg](unsigned int extruder_id) { return cfg.enable_dynamic_fan_speeds.get_at(extruder_id); })) {
+                            [&cfg](unsigned int extruder_id) {
+                                return cfg.enable_dynamic_fan_speeds.get_at(extruder_id)
+                                    || (!cfg.filament_enable_dynamic_overhang_speeds.is_nil(extruder_id)
+                                        && cfg.filament_enable_dynamic_overhang_speeds.get_at(extruder_id));
+                            })) {
                 regions_with_dynamic_speeds.insert(pr);
             }
         }
